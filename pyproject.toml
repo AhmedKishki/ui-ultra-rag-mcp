@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ultra-rag-mcp-ui"
+version = "0.1.0"
+description = "A reusable local browser interface for UltraRAG-derived MCP servers"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "starlette>=1.6,<2",
+    "uvicorn>=0.53,<1",
+]
+
+[project.urls]
+Repository = "https://github.com/AhmedKishki/ultra-rag-mcp-ui"
+Issues = "https://github.com/AhmedKishki/ultra-rag-mcp-ui/issues"
+"Upstream UltraRAG" = "https://github.com/OpenBMB/UltraRAG"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28,<1",
+    "pytest>=8,<10",
+    "ruff>=0.7.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ultra_rag_mcp_ui = ["static/*.css", "static/*.html", "static/*.js"]
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

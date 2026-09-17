@@ -1,0 +1,36 @@
+UPSTREAM ATTRIBUTION
+
+ultra-rag-mcp-ui is an independent companion interface for MCP servers built
+around the UltraRAG project:
+
+    UltraRAG
+    https://github.com/OpenBMB/UltraRAG
+    https://ultrarag.openbmb.cn/
+
+UltraRAG's upstream README identifies it as a joint project of THUNLP at
+Tsinghua University, NEUIR at Northeastern University, OpenBMB, and AI9stars,
+together with the wider UltraRAG contributor community:
+
+    https://nlp.csai.tsinghua.edu.cn/
+    https://neuir.github.io/
+    https://www.openbmb.cn/home
+    https://github.com/AI9Stars
+    https://github.com/OpenBMB/UltraRAG/graphs/contributors
+
+UltraRAG is distributed under the Apache License, Version 2.0. Its license file
+contains the notice "Copyright 2023 OpenBMB":
+
+    https://github.com/OpenBMB/UltraRAG/blob/main/LICENSE.txt
+    https://www.apache.org/licenses/LICENSE-2.0
+
+This UI package does not bundle UltraRAG source code and does not provide an
+UltraRAG runtime. Each consuming MCP server is responsible for documenting the
+exact upstream version and components that it uses.
+
+INDEPENDENT PROJECT NOTICE
+
+This repository is not an official UltraRAG release and is not affiliated with
+or endorsed by OpenBMB, THUNLP, NEUIR, AI9stars, or the UltraRAG contributors.
+The UltraRAG name is used only to identify the software ecosystem for which the
+interface is designed.
+
