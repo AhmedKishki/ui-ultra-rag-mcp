@@ -1,4 +1,4 @@
-# ultra-rag-mcp-ui
+# ui-ultra-rag-mcp
 
 A reusable, local browser interface for document-oriented MCP servers built
 around UltraRAG.
@@ -12,6 +12,9 @@ private project state.
 This package is UI infrastructure, not an MCP server and not a knowledge base.
 Installing it alone does not expose MCP tools or ingest documents. Use the UI
 command documented by the MCP server you installed.
+
+The `mcp` in the name identifies the interface it is designed to consume; it
+does not mean this package implements an MCP server.
 
 ## What it provides
 
@@ -35,7 +38,7 @@ metadata controls entirely.
 browser
    │ local HTTP
    ▼
-ultra-rag-mcp-ui
+ui-ultra-rag-mcp
    │ normalized adapter calls
    ▼
 server-owned adapter
@@ -49,7 +52,7 @@ The dependency should be pinned by commit in the consuming project's
 
 ```toml
 dependencies = [
-  "ultra-rag-mcp-ui @ git+https://github.com/AhmedKishki/ultra-rag-mcp-ui.git@COMMIT",
+  "ui-ultra-rag-mcp @ git+https://github.com/AhmedKishki/ui-ultra-rag-mcp.git@COMMIT",
 ]
 ```
 
@@ -83,7 +86,7 @@ or discovers files itself. See the tests for a minimal in-memory adapter.
 Create and serve an app from the consuming project:
 
 ```python
-from ultra_rag_mcp_ui import UIProfile, create_ui_app, run_ui
+from ui_ultra_rag_mcp import UIProfile, create_ui_app, run_ui
 
 app = create_ui_app(
     profile=UIProfile(application_name="My UltraRAG"),
@@ -95,8 +98,8 @@ run_ui(app, host="127.0.0.1", port=5051)
 ## Development
 
 ```bash
-git clone https://github.com/AhmedKishki/ultra-rag-mcp-ui.git
-cd ultra-rag-mcp-ui
+git clone https://github.com/AhmedKishki/ui-ultra-rag-mcp.git
+cd ui-ultra-rag-mcp
 uv sync --frozen
 uv run pytest -q
 uv run ruff check .
@@ -120,4 +123,3 @@ This independent companion project is designed for MCP servers built around
 project of THUNLP, NEUIR, OpenBMB, AI9stars, and its contributors and is
 licensed under Apache-2.0. This repository is not an official UltraRAG release
 and does not imply endorsement. See [`NOTICE`](NOTICE).
-

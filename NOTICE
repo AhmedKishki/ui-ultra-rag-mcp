@@ -1,6 +1,6 @@
 UPSTREAM ATTRIBUTION
 
-ultra-rag-mcp-ui is an independent companion interface for MCP servers built
+ui-ultra-rag-mcp is an independent companion interface for MCP servers built
 around the UltraRAG project:
 
     UltraRAG
@@ -33,4 +33,3 @@ This repository is not an official UltraRAG release and is not affiliated with
 or endorsed by OpenBMB, THUNLP, NEUIR, AI9stars, or the UltraRAG contributors.
 The UltraRAG name is used only to identify the software ecosystem for which the
 interface is designed.
-

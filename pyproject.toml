@@ -3,8 +3,8 @@ requires = ["setuptools>=84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ultra-rag-mcp-ui"
-version = "0.1.0"
+name = "ui-ultra-rag-mcp"
+version = "0.2.0"
 description = "A reusable local browser interface for UltraRAG-derived MCP servers"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
@@ -14,8 +14,8 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/AhmedKishki/ultra-rag-mcp-ui"
-Issues = "https://github.com/AhmedKishki/ultra-rag-mcp-ui/issues"
+Repository = "https://github.com/AhmedKishki/ui-ultra-rag-mcp"
+Issues = "https://github.com/AhmedKishki/ui-ultra-rag-mcp/issues"
 "Upstream UltraRAG" = "https://github.com/OpenBMB/UltraRAG"
 
 [dependency-groups]
@@ -29,7 +29,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-ultra_rag_mcp_ui = ["static/*.css", "static/*.html", "static/*.js"]
+ui_ultra_rag_mcp = ["static/*.css", "static/*.html", "static/*.js"]
 
 [tool.uv]
 package = true

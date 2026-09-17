@@ -6,7 +6,7 @@ from typing import Any
 
 from starlette.testclient import TestClient
 
-from ultra_rag_mcp_ui import (
+from ui_ultra_rag_mcp import (
     SourceFile,
     UICapabilities,
     UIProfile,
