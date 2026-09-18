@@ -152,6 +152,10 @@ def test_writes_and_source_file_are_constrained(tmp_path: Path) -> None:
             "/api/search",
             json={"query": "test", "unsupported": True},
         )
+        unsupported_force = client.post(
+            "/api/ingest",
+            json={"force_recompute": True},
+        )
 
     assert search.status_code == 200
     assert metadata.json()["requires_ingest"] is True
@@ -162,6 +166,42 @@ def test_writes_and_source_file_are_constrained(tmp_path: Path) -> None:
     assert non_json.status_code == 415
     assert cross_origin.status_code == 403
     assert unknown.status_code == 400
+    assert unsupported_force.status_code == 400
+
+
+def test_force_recompute_is_capability_gated_and_forwarded(tmp_path: Path) -> None:
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    adapter = FakeAdapter(source)
+    app = create_ui_app(
+        profile=_profile(force_recompute=True),
+        adapter=adapter,
+    )
+
+    with TestClient(app) as client:
+        ingestion = client.post(
+            "/api/ingest",
+            json={
+                "chunk_size": 384,
+                "chunk_overlap": 64,
+                "force_recompute": True,
+            },
+        )
+        invalid = client.post(
+            "/api/ingest",
+            json={"force_recompute": "yes"},
+        )
+
+    assert ingestion.status_code == 200
+    assert invalid.status_code == 400
+    assert (
+        "ingest",
+        {
+            "chunk_size": 384,
+            "chunk_overlap": 64,
+            "force_recompute": True,
+        },
+    ) in adapter.calls
 
 
 def test_disabled_capabilities_are_reported_and_enforced(tmp_path: Path) -> None:

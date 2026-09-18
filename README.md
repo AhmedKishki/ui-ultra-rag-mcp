@@ -84,6 +84,9 @@ class UIAdapter(Protocol):
 Bundle controls are disabled by default. A consuming server enables
 `bundle_export` and/or `bundle_import` in `UICapabilities` only when its adapter
 implements those operations. The shared UI never reads an archive itself.
+Servers that distinguish an ordinary re-ingestion from a forced rebuild can
+also enable `force_recompute`; the UI then sends that flag only for its
+**Regenerate** action.
 
 The adapter owns MCP startup and shutdown, error translation, source-file
 authorization, and schema normalization. The shared host never reads an index

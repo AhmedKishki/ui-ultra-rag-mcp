@@ -21,6 +21,7 @@ class UICapabilities:
     source_files: bool = True
     metadata_filters: bool = True
     reranking: bool = True
+    force_recompute: bool = False
     bundle_export: bool = False
     bundle_import: bool = False
 

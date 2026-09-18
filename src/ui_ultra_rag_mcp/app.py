@@ -210,11 +210,18 @@ async def _passage(request: Request) -> Response:
 async def _ingest(request: Request) -> Response:
     body = await _json_body(request)
     allowed = {"chunk_size", "chunk_overlap"}
+    if request.app.state.profile.capabilities.force_recompute:
+        allowed.add("force_recompute")
     unknown = set(body) - allowed
     if unknown:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported ingestion fields: {', '.join(sorted(unknown))}",
+        )
+    if "force_recompute" in body and not isinstance(body["force_recompute"], bool):
+        raise HTTPException(
+            status_code=400,
+            detail="force_recompute must be a boolean",
         )
     return JSONResponse(await _adapter_call(request, "ingest", body))
 

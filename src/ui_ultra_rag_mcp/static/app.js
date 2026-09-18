@@ -6,6 +6,7 @@ const state = {
   sources: [],
   excludedSources: [],
   busy: false,
+  forceRecompute: false,
 };
 
 const byId = (id) => document.getElementById(id);
@@ -205,6 +206,9 @@ function renderStatus(status) {
   if (!status.ready) generationAction = "Create generation";
   else if (status.generation_upgrade_required) generationAction = "Regenerate";
   else if (status.stale) generationAction = "Re-ingest changes";
+  state.forceRecompute = Boolean(
+    status.ready && (!status.stale || status.generation_upgrade_required),
+  );
   byId("ingest-button").textContent = generationAction;
   byId("ingest-dialog").querySelector("h2").textContent = generationAction;
   byId("ingest-submit").textContent = generationAction;
@@ -628,9 +632,11 @@ async function ingest(event) {
   }
   setBusy(true, state.profile?.ingest_busy_message || "Building the indexes. This can take several minutes…");
   try {
+    const request = { chunk_size: chunkSize, chunk_overlap: chunkOverlap };
+    if (hasCapability("force_recompute")) request.force_recompute = state.forceRecompute;
     const result = await api("/api/ingest", {
       method: "POST",
-      body: JSON.stringify({ chunk_size: chunkSize, chunk_overlap: chunkOverlap }),
+      body: JSON.stringify(request),
     });
     byId("ingest-dialog").close();
     clearResults();
