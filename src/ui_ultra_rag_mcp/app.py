@@ -37,6 +37,8 @@ _OPERATION_CAPABILITY = {
     "ingest": "ingestion",
     "set_source_metadata": "metadata",
     "set_source_inclusion": "source_inclusion",
+    "export_bundle": "bundle_export",
+    "import_bundle": "bundle_import",
 }
 
 
@@ -239,6 +241,27 @@ async def _set_inclusion(request: Request) -> Response:
     return JSONResponse(await _adapter_call(request, "set_source_inclusion", body))
 
 
+async def _export_bundle(request: Request) -> Response:
+    body = await _json_body(request)
+    if body:
+        raise HTTPException(status_code=400, detail="Bundle export takes no fields")
+    return JSONResponse(await _adapter_call(request, "export_bundle"))
+
+
+async def _import_bundle(request: Request) -> Response:
+    body = await _json_body(request)
+    if set(body) - {"bundle_name", "activate"} or "bundle_name" not in body:
+        raise HTTPException(
+            status_code=400,
+            detail="Bundle import requires bundle_name and optional activate",
+        )
+    if not isinstance(body["bundle_name"], str) or not body["bundle_name"].strip():
+        raise HTTPException(status_code=400, detail="bundle_name must not be empty")
+    if "activate" in body and not isinstance(body["activate"], bool):
+        raise HTTPException(status_code=400, detail="activate must be true or false")
+    return JSONResponse(await _adapter_call(request, "import_bundle", body))
+
+
 async def _source_file(request: Request) -> Response:
     _require_capability(request, "source_files")
     raw_path = request.query_params.get("path", "").strip()
@@ -329,6 +352,8 @@ def create_ui_app(
         Route("/api/ingest", _ingest, methods=["POST"]),
         Route("/api/source-metadata", _set_metadata, methods=["POST"]),
         Route("/api/source-inclusion", _set_inclusion, methods=["POST"]),
+        Route("/api/bundles/export", _export_bundle, methods=["POST"]),
+        Route("/api/bundles/import", _import_bundle, methods=["POST"]),
         Route("/api/source-file", _source_file),
     ]
     app = Starlette(

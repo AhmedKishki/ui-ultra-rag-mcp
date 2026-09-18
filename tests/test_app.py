@@ -60,6 +60,14 @@ class FakeAdapter:
             "ingest": {"generation_id": "generation-2", "chunk_count": 2},
             "set_source_metadata": {"requires_ingest": True},
             "set_source_inclusion": {"included": arguments.get("included")},
+            "export_bundle": {
+                "bundle_name": "project-generation.research-rag.zip",
+                "sha256": "abc",
+            },
+            "import_bundle": {
+                "generation_id": "generation-imported",
+                "activated": arguments.get("activate", True),
+            },
         }
         return responses[operation]
 
@@ -180,12 +188,55 @@ def test_disabled_capabilities_are_reported_and_enforced(tmp_path: Path) -> None
             json={"query": "evidence", "rerank": True},
         )
         source_file = client.get("/api/source-file?path=evidence.pdf")
+        export = client.post("/api/bundles/export", json={})
+        bundle_import = client.post(
+            "/api/bundles/import",
+            json={"bundle_name": "project.research-rag.zip"},
+        )
 
     assert ui.json()["capabilities"]["sources"] is False
     assert sources.status_code == 404
     assert ingest.status_code == 404
     assert rerank.status_code == 400
     assert source_file.status_code == 404
+    assert export.status_code == 404
+    assert bundle_import.status_code == 404
+
+
+def test_bundle_actions_are_capability_gated_and_forwarded(tmp_path: Path) -> None:
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    adapter = FakeAdapter(source)
+    app = create_ui_app(
+        profile=_profile(bundle_export=True, bundle_import=True),
+        adapter=adapter,
+    )
+
+    with TestClient(app) as client:
+        exported = client.post("/api/bundles/export", json={})
+        imported = client.post(
+            "/api/bundles/import",
+            json={
+                "bundle_name": "project-generation.research-rag.zip",
+                "activate": False,
+            },
+        )
+        unsafe = client.post(
+            "/api/bundles/import",
+            json={"bundle_name": "bundle.zip", "path": "../bundle.zip"},
+        )
+
+    assert exported.json()["bundle_name"].endswith(".research-rag.zip")
+    assert imported.json()["activated"] is False
+    assert unsafe.status_code == 400
+    assert ("export_bundle", {}) in adapter.calls
+    assert (
+        "import_bundle",
+        {
+            "bundle_name": "project-generation.research-rag.zip",
+            "activate": False,
+        },
+    ) in adapter.calls
 
 
 def test_configuration_rejects_ambiguous_adapter_setup(tmp_path: Path) -> None:

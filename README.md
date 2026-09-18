@@ -21,7 +21,7 @@ does not mean this package implements an MCP server.
 - a basic search-and-sources workspace with no frontend build step;
 - status, search, passage context, source listing, and ingestion views;
 - optional metadata editing, source exclusion, source-file access, filters,
-  and reranking controls;
+  reranking, and portable-bundle controls;
 - capability flags so an adapter can hide unsupported actions;
 - same-origin checks for writes, a strict content security policy, and
   loopback-only serving; and
@@ -78,6 +78,12 @@ class UIAdapter(Protocol):
 | `ingest` | Build and select a complete generation |
 | `set_source_metadata` | Save reviewed bibliographic metadata |
 | `set_source_inclusion` | Exclude or restore a reviewed source |
+| `export_bundle` | Export a server-defined portable project bundle |
+| `import_bundle` | Validate and import a named project-local bundle |
+
+Bundle controls are disabled by default. A consuming server enables
+`bundle_export` and/or `bundle_import` in `UICapabilities` only when its adapter
+implements those operations. The shared UI never reads an archive itself.
 
 The adapter owns MCP startup and shutdown, error translation, source-file
 authorization, and schema normalization. The shared host never reads an index

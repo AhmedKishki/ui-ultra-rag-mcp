@@ -21,6 +21,8 @@ class UICapabilities:
     source_files: bool = True
     metadata_filters: bool = True
     reranking: bool = True
+    bundle_export: bool = False
+    bundle_import: bool = False
 
     def as_dict(self) -> dict[str, bool]:
         return asdict(self)
@@ -41,6 +43,8 @@ class UIProfile:
     )
     ingest_busy_message: str = "Building the indexes. This can take several minutes…"
     footer_text: str = "Verify important quotations in the original source."
+    result_text_label: str = "Retrieved passage"
+    copy_text_label: str = "Copy passage"
     capabilities: UICapabilities = UICapabilities()
 
     def __post_init__(self) -> None:

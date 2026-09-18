@@ -97,8 +97,11 @@ summary {
 .stat-detail,
 .source-path,
 .source-byline,
+.source-doi,
 .result-byline,
+.result-doi,
 .result-meta,
+.semantic-text-label,
 .form-note,
 .dialog label small,
 .filter-fields small,
@@ -106,6 +109,11 @@ summary {
 .score-label {
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+code {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.875em;
 }
 
 .project-name {
@@ -458,6 +466,21 @@ h3 {
   font-size: 0.9375rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.semantic-text-label {
+  margin-top: 0.85rem;
+  font-weight: 600;
+}
+
+.source-doi,
+.result-doi {
+  margin: 0.2rem 0;
+  overflow-wrap: anywhere;
+}
+
+.bundle-activate {
+  margin: 1rem 0 0;
 }
 
 .locator-badge,

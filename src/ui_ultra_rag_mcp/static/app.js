@@ -121,6 +121,8 @@ function setBusy(active, message = "Working…") {
   });
   byId("refresh-button").disabled = active;
   byId("ingest-button").disabled = active || !hasCapability("ingestion");
+  byId("export-button").disabled = active || !hasCapability("bundle_export");
+  byId("import-button").disabled = active || !hasCapability("bundle_import");
 }
 
 function toast(message, isError = false) {
@@ -182,7 +184,7 @@ function configureRetrieval(status) {
 function renderStatus(status) {
   state.status = status;
   const projectPath = status.project_root || "";
-  byId("project-name").textContent = projectPath.split(/[\\/]/).filter(Boolean).pop()
+  byId("project-name").textContent = status.project_name || projectPath.split(/[\\/]/).filter(Boolean).pop()
     || state.profile?.project_fallback_name
     || "Knowledge base";
   byId("project-path").textContent = projectPath;
@@ -197,6 +199,14 @@ function renderStatus(status) {
   byId("generation-label").textContent = status.generation_id ? compactId(status.generation_id) : "None";
   byId("generation-label").title = status.generation_id || "";
   byId("generation-date").textContent = formatDate(status.created_at);
+
+  let generationAction = "Regenerate";
+  if (!status.ready) generationAction = "Create generation";
+  else if (status.generation_upgrade_required) generationAction = "Regenerate";
+  else if (status.stale) generationAction = "Re-ingest changes";
+  byId("ingest-button").textContent = generationAction;
+  byId("ingest-dialog").querySelector("h2").textContent = generationAction;
+  byId("ingest-submit").textContent = generationAction;
 
   let indexState = "Not built";
   if (status.ready && status.stale) indexState = "Stale";
@@ -215,6 +225,16 @@ function renderStatus(status) {
     byId("status-notice-text").textContent = status.message || "Create the first knowledge-base generation.";
     noticeAction.hidden = !hasCapability("ingestion");
     noticeAction.textContent = "Create generation";
+    noticeAction.dataset.action = "ingest";
+  } else if (status.generation_upgrade_required) {
+    notice.hidden = false;
+    byId("status-notice-title").textContent = "This generation needs an upgrade";
+    const reasons = (status.upgrade_reasons || []).join(", ").replaceAll("_", " ");
+    byId("status-notice-text").textContent = reasons
+      ? `Regenerate to apply: ${reasons}. The existing generation remains searchable.`
+      : "Regenerate to apply the current extraction and retrieval policies.";
+    noticeAction.hidden = !hasCapability("ingestion");
+    noticeAction.textContent = "Regenerate";
     noticeAction.dataset.action = "ingest";
   } else if (status.stale) {
     notice.hidden = false;
@@ -251,6 +271,7 @@ function sourceCard(source) {
   titleRow.append(node("span", "source-title", inlineText(source.title) || source.source_relative_path));
   body.append(titleRow);
   body.append(node("p", "source-byline", authorLine(source)));
+  if (source.doi) body.append(node("p", "source-doi", `doi:${inlineText(source.doi).replace(/^doi:/i, "")}`));
   const path = node("p", "source-path", source.source_relative_path);
   path.title = source.source_path || source.source_relative_path;
   body.append(path);
@@ -367,7 +388,9 @@ function resultCard(hit) {
   header.append(node("span", "locator-badge", locatorLabel(hit.locator)));
   content.append(header);
   content.append(node("div", "result-byline", `${authorLine(hit)} · ${hit.source_path}`));
+  if (hit.doi) content.append(node("div", "result-doi", `doi:${inlineText(hit.doi).replace(/^doi:/i, "")}`));
   content.append(node("p", "result-citation", inlineText(hit.citation) || "Citation unavailable"));
+  content.append(node("div", "semantic-text-label", state.profile?.result_text_label || "Retrieved passage"));
   content.append(node("p", "passage-text", readableText(hit.text)));
 
   if ((hit.categories || []).length || (hit.keywords || []).length) {
@@ -379,7 +402,7 @@ function resultCard(hit) {
 
   const footer = node("div", "result-footer");
   const actions = node("div", "result-actions");
-  actions.append(button("Copy passage", "copy-passage", hit.chunk_id));
+  actions.append(button(state.profile?.copy_text_label || "Copy passage", "copy-passage", hit.chunk_id));
   actions.append(button("Copy citation", "copy-citation", hit.chunk_id));
   if (hasCapability("passage_context")) {
     actions.append(button("Nearby context", "show-context", hit.chunk_id));
@@ -414,7 +437,12 @@ function renderResults(payload) {
   byId("search-summary").hidden = false;
   const count = payload.result_count || 0;
   byId("result-heading").textContent = `${count} passage${count === 1 ? "" : "s"}`;
-  const details = [payload.retrieval_method?.toUpperCase(), payload.reranked ? "CPU reranked" : null, compactId(payload.generation_id)].filter(Boolean);
+  const details = [
+    payload.retrieval_method?.toUpperCase(),
+    payload.reranked ? "CPU reranked" : null,
+    payload.relevance_limited ? `relevance limited · requested ${payload.requested_top_k}` : null,
+    compactId(payload.generation_id),
+  ].filter(Boolean);
   byId("result-meta").textContent = details.join(" · ");
   if (!count) {
     results.append(node("div", "no-records", "No passages matched. Broaden the query or remove metadata filters."));
@@ -615,6 +643,46 @@ async function ingest(event) {
   }
 }
 
+async function exportBundle() {
+  setBusy(true, "Exporting the current generation and original sources…");
+  try {
+    const result = await api("/api/bundles/export", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    toast(`Bundle created: ${result.bundle_name}`);
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setBusy(false);
+    if (state.status) configureRetrieval(state.status);
+  }
+}
+
+async function importBundle(event) {
+  event.preventDefault();
+  const payload = {
+    bundle_name: byId("bundle-name").value.trim(),
+    activate: byId("bundle-activate").checked,
+  };
+  setBusy(true, "Validating the bundle and rebuilding local indexes…");
+  try {
+    const result = await api("/api/bundles/import", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    byId("bundle-dialog").close();
+    clearResults();
+    toast(result.message || `Bundle ${result.generation_id} imported.`);
+    await loadWorkspace();
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setBusy(false);
+    if (state.status) configureRetrieval(state.status);
+  }
+}
+
 function handleAction(event) {
   const target = event.target.closest("[data-action]");
   if (!target) return;
@@ -626,7 +694,7 @@ function handleAction(event) {
   else if (action === "show-context") showContext(value);
   else if (action === "copy-passage") {
     const hit = state.hits.get(value);
-    if (hit) copyText(readableText(hit.text), "Passage copied.");
+    if (hit) copyText(readableText(hit.text), "Semantic text copied.");
   } else if (action === "copy-citation") {
     const hit = state.hits.get(value);
     if (hit) copyText(inlineText(hit.citation), "Citation copied.");
@@ -655,11 +723,14 @@ function initialize() {
   });
   byId("refresh-button").addEventListener("click", () => loadWorkspace({ announce: true }));
   byId("ingest-button").addEventListener("click", () => byId("ingest-dialog").showModal());
+  byId("export-button").addEventListener("click", exportBundle);
+  byId("import-button").addEventListener("click", () => byId("bundle-dialog").showModal());
   byId("notice-action").addEventListener("click", handleAction);
   byId("search-form").addEventListener("submit", search);
   byId("metadata-form").addEventListener("submit", saveMetadata);
   byId("exclusion-form").addEventListener("submit", excludeSource);
   byId("ingest-form").addEventListener("submit", ingest);
+  byId("bundle-form").addEventListener("submit", importBundle);
   byId("source-filter").addEventListener("input", filterSources);
   byId("results").addEventListener("click", handleAction);
   byId("source-list").addEventListener("click", handleAction);

@@ -27,6 +27,8 @@ storage behavior of its own.
 
 - `UIProfile` supplies labels and supported capabilities.
 - `UIAdapter` normalizes one server to the document-workspace operations.
+- Portable bundle buttons only forward `export_bundle` and `import_bundle`;
+  archive placement, validation, and storage remain adapter/server concerns.
 - `create_ui_app` builds the Starlette application.
 - `run_ui` starts Uvicorn on a loopback address.
 
@@ -47,4 +49,3 @@ uv run python -m compileall -q src tests
 
 Tests must cover packaged static assets, the normalized routes, capability
 enforcement, same-origin write protection, and source-file delegation.
-
