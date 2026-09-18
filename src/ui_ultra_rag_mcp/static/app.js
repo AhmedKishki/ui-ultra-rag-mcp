@@ -22,6 +22,7 @@ function applyProfile(profile) {
   byId("section-tabs").setAttribute("aria-label", profile.navigation_label);
   byId("ingest-intro").textContent = profile.ingest_intro;
   byId("footer-text").textContent = profile.footer_text;
+  byId("bundle-import-intro").textContent = profile.bundle_import_intro;
   document.querySelectorAll("[data-capability]").forEach((element) => {
     element.hidden = !hasCapability(element.dataset.capability);
   });
@@ -644,6 +645,9 @@ async function ingest(event) {
 }
 
 async function exportBundle() {
+  const warning = state.profile?.bundle_export_warning
+    || "Export this generation? The archive may contain complete original sources.";
+  if (!window.confirm(warning)) return;
   setBusy(true, "Exporting the current generation and original sources…");
   try {
     const result = await api("/api/bundles/export", {

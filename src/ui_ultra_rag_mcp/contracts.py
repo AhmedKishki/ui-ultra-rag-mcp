@@ -45,6 +45,13 @@ class UIProfile:
     footer_text: str = "Verify important quotations in the original source."
     result_text_label: str = "Retrieved passage"
     copy_text_label: str = "Copy passage"
+    bundle_import_intro: str = (
+        "Place the archive in the server's project-local bundle directory, then "
+        "enter its filename."
+    )
+    bundle_export_warning: str = (
+        "Export this generation? The archive may contain complete original sources."
+    )
     capabilities: UICapabilities = UICapabilities()
 
     def __post_init__(self) -> None:
