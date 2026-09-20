@@ -1,36 +1,23 @@
 # ui-ultra-rag-mcp
 
-A reusable, local browser interface for document-oriented MCP servers built
-around UltraRAG.
+A reusable, local browser interface for document-oriented MCP servers built around UltraRAG.
 
-The package provides the plain evidence workspace, a loopback-only HTTP host,
-request validation, and a small adapter contract. An MCP project supplies a
-thin adapter that maps its own public tools to the UI operations. This keeps UI
-code in one repository without sharing a server's indexes, source files, or
-private project state.
+The package provides the plain evidence workspace, a loopback-only HTTP host, request validation, and a small adapter contract. An MCP project supplies a thin adapter that maps its own public tools to the UI operations. This keeps UI code in one repository without sharing a server's indexes, source files, or private project state.
 
-This package is UI infrastructure, not an MCP server and not a knowledge base.
-Installing it alone does not expose MCP tools or ingest documents. Use the UI
-command documented by the MCP server you installed.
+This package is UI infrastructure, not an MCP server and not a knowledge base. Installing it alone does not expose MCP tools or ingest documents. Use the UI command documented by the MCP server you installed.
 
-The `mcp` in the name identifies the interface it is designed to consume; it
-does not mean this package implements an MCP server.
+The `mcp` in the name identifies the interface it is designed to consume; it does not mean this package implements an MCP server.
 
 ## What it provides
 
 - a basic search-and-sources workspace with no frontend build step;
 - status, search, passage context, source listing, and ingestion views;
-- optional metadata editing, source exclusion, source-file access, filters,
-  reranking, and portable-bundle controls;
+- optional metadata editing, source exclusion, source-file access, filters, reranking, and portable-bundle controls;
 - capability flags so an adapter can hide unsupported actions;
-- same-origin checks for writes, a strict content security policy, and
-  loopback-only serving; and
+- same-origin checks for writes, a strict content security policy, and loopback-only serving; and
 - no dependency on FastMCP, UltraRAG internals, or a particular storage layout.
 
-The current normalized document contract uses bibliographic metadata fields
-(`title`, `authors`, `year`, `doi`, `categories`, and `keywords`). A specialized
-server remains responsible for validating those values and may disable the
-metadata controls entirely.
+The current normalized document contract uses bibliographic metadata fields (`title`, `authors`, `year`, `doi`, `categories`, and `keywords`). A specialized server remains responsible for validating those values and may disable the metadata controls entirely.
 
 ## How MCP projects use it
 
@@ -47,8 +34,7 @@ server-owned adapter
 the server's public MCP tools and project state
 ```
 
-The dependency should be pinned by commit in the consuming project's
-`pyproject.toml`:
+The dependency should be pinned by commit in the consuming project's `pyproject.toml`:
 
 ```toml
 dependencies = [
@@ -81,16 +67,9 @@ class UIAdapter(Protocol):
 | `export_bundle` | Export a server-defined portable project bundle |
 | `import_bundle` | Validate and import a named project-local bundle |
 
-Bundle controls are disabled by default. A consuming server enables
-`bundle_export` and/or `bundle_import` in `UICapabilities` only when its adapter
-implements those operations. The shared UI never reads an archive itself.
-Servers that distinguish an ordinary re-ingestion from a forced rebuild can
-also enable `force_recompute`; the UI then sends that flag only for its
-**Regenerate** action.
+Bundle controls are disabled by default. A consuming server enables `bundle_export` and/or `bundle_import` in `UICapabilities` only when its adapter implements those operations. The shared UI never reads an archive itself. Servers that distinguish an ordinary re-ingestion from a forced rebuild can also enable `force_recompute`; the UI then sends that flag only for its **Regenerate** action.
 
-The adapter owns MCP startup and shutdown, error translation, source-file
-authorization, and schema normalization. The shared host never reads an index
-or discovers files itself. See the tests for a minimal in-memory adapter.
+The adapter owns MCP startup and shutdown, error translation, source-file authorization, and schema normalization. The shared host never reads an index or discovers files itself. See the tests for a minimal in-memory adapter.
 
 Create and serve an app from the consuming project:
 
@@ -114,21 +93,12 @@ uv run pytest -q
 uv run ruff check .
 ```
 
-Static HTML, CSS, and JavaScript are packaged inside the Python distribution.
-There is deliberately no Node.js toolchain.
+Static HTML, CSS, and JavaScript are packaged inside the Python distribution. There is deliberately no Node.js toolchain.
 
 ## Security boundary
 
-The host accepts only `127.0.0.1`, `localhost`, or `::1`. It has no
-authentication and must not be exposed to a network. Write requests must be
-same-origin JSON. A source file is served only after the server-owned adapter
-returns an authorized `SourceFile`; adapters must resolve paths within their
-own project policy.
+The host accepts only `127.0.0.1`, `localhost`, or `::1`. It has no authentication and must not be exposed to a network. Write requests must be same-origin JSON. A source file is served only after the server-owned adapter returns an authorized `SourceFile`; adapters must resolve paths within their own project policy.
 
 ## UltraRAG credit
 
-This independent companion project is designed for MCP servers built around
-[`OpenBMB/UltraRAG`](https://github.com/OpenBMB/UltraRAG). UltraRAG is a joint
-project of THUNLP, NEUIR, OpenBMB, AI9stars, and its contributors and is
-licensed under Apache-2.0. This repository is not an official UltraRAG release
-and does not imply endorsement. See [`NOTICE`](NOTICE).
+This independent companion project is designed for MCP servers built around [`OpenBMB/UltraRAG`](https://github.com/OpenBMB/UltraRAG). UltraRAG is a joint project of THUNLP, NEUIR, OpenBMB, AI9stars, and its contributors and is licensed under Apache-2.0. This repository is not an official UltraRAG release and does not imply endorsement. See [`NOTICE`](NOTICE).
