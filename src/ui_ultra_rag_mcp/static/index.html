@@ -122,6 +122,17 @@
             </div>
           </details>
 
+          <details class="filter-drawer" data-capability="project_metadata">
+            <summary>Limit to projects</summary>
+            <div class="filter-fields">
+              <label for="project-any-filter">
+                <span class="field-label">Any of these projects</span>
+                <input id="project-any-filter" type="text" placeholder="ai-and-fetishism">
+                <small>Comma separated; at least one project tag must match. Pick from the project list beside the status.</small>
+              </label>
+            </div>
+          </details>
+
           <details class="filter-drawer" data-capability="source_selection">
             <summary>Limit to named sources</summary>
             <div class="filter-fields">
@@ -195,6 +206,12 @@
             <strong id="index-state" class="stat-value stat-value-state">Checking</strong>
             <span id="retrieval-detail" class="stat-detail">BM25 + dense</span>
           </article>
+        </div>
+
+        <div id="project-summary" class="partition-summary" data-capability="project_metadata" hidden>
+          <h3>Projects</h3>
+          <p class="form-note">Reviewed project tags with the number of searchable sources gathered for each. Select one to search it.</p>
+          <div id="project-chips" class="partition-chips"></div>
         </div>
 
         <div id="partition-summary" class="partition-summary" data-capability="category_partitions" hidden>
@@ -277,6 +294,10 @@
           <label for="metadata-keywords">
             <span class="field-label">Keywords</span>
             <input id="metadata-keywords" type="text" placeholder="AI, labour, fetishism">
+          </label>
+          <label for="metadata-project" data-capability="project_metadata">
+            <span class="field-label">Projects</span>
+            <input id="metadata-project" type="text" placeholder="ai-and-fetishism">
           </label>
         </div>
         <p class="form-note">Metadata changes become searchable after a new ingestion.</p>

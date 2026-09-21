@@ -20,6 +20,7 @@ class UICapabilities:
     source_inclusion: bool = True
     source_files: bool = True
     metadata_filters: bool = True
+    project_metadata: bool = False
     source_selection: bool = False
     category_partitions: bool = False
     reranking: bool = True

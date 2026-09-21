@@ -13,7 +13,7 @@ The `mcp` in the name identifies the interface it is designed to consume; it doe
 - a basic search-and-sources workspace with no frontend build step;
 - status, search, passage context, source listing, and ingestion views;
 - optional metadata editing, source exclusion, source-file access, filters, reranking, and portable-bundle controls;
-- optional per-query source selection and category-partition filters for servers that support them;
+- optional per-query source selection, category-partition, and project-tag filters for servers that support them;
 - capability flags so an adapter can hide unsupported actions;
 - same-origin checks for writes, a strict content security policy, and loopback-only serving; and
 - no dependency on FastMCP, UltraRAG internals, or a particular storage layout.
@@ -76,8 +76,9 @@ Two further capability flags are opt-in and cover filters a server may not imple
 |---|---|---|
 | `source_selection` | "Limit to named sources" with include and exclude lists, a stable-ID line on every source card, and **Only this source** / **Exclude from search** actions | `source_ids`, `exclude_source_ids` |
 | `category_partitions` | "Limit to corpus partitions" any-of filter and a partition list beside the status, with one chip per category and its searchable source count | `categories_any` (and `categories_any` on the source listing) |
+| `project_metadata` | A **Projects** field in the metadata editor, "Limit to projects" any-of filter, a project list beside the status, and a project tag on every source card | `projects`, `projects_any` (and both on the source listing) |
 
-Both default to `False`, so an adapter that does not support them sees neither the controls nor the extra request fields, and a request that still carries them is rejected with a 400 rather than forwarded. The partition list is read from the status response's `categories` entries; the UI never derives partitions from source metadata itself.
+All three default to `False`, so an adapter that does not support them sees neither the controls nor the extra request fields, and a request that still carries them is rejected with a 400 rather than forwarded. The partition and project lists are read from the status response's `categories` and `projects` entries; the UI never derives either from source metadata itself.
 
 The adapter owns MCP startup and shutdown, error translation, source-file authorization, and schema normalization. The shared host never reads an index or discovers files itself. See the tests for a minimal in-memory adapter.
 

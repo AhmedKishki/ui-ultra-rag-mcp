@@ -253,6 +253,7 @@ function renderStatus(status) {
   }
   configureRetrieval(status);
   renderPartitions(status);
+  renderProjects(status);
 }
 
 function tagList(values, className = "tag") {
@@ -271,25 +272,37 @@ function addSearchFilter(field, value) {
   toast(`Added to the search filter: ${value}`);
 }
 
-function renderPartitions(status) {
-  const container = byId("partition-chips");
+function renderInventory(containerId, entries, key, action) {
+  const container = byId(containerId);
   if (!container) return;
-  const partitions = status.categories || [];
   container.replaceChildren();
-  if (!partitions.length) {
-    container.append(node("span", "form-note", "No reviewed categories yet."));
+  if (!entries.length) {
+    container.append(node("span", "form-note", "None recorded yet."));
     return;
   }
-  partitions.forEach((item) => {
+  entries.forEach((item) => {
     const chip = button(
-      `${item.category} · ${formatNumber(item.searchable_source_count)}`,
-      "partition-filter",
-      item.category,
+      `${item[key]} · ${formatNumber(item.searchable_source_count)}`,
+      action,
+      item[key],
       "tag tag-button",
     );
-    chip.title = `Search ${item.category}`;
+    chip.title = `Search ${item[key]}`;
     container.append(chip);
   });
+}
+
+function renderPartitions(status) {
+  renderInventory(
+    "partition-chips",
+    status.categories || [],
+    "category",
+    "partition-filter",
+  );
+}
+
+function renderProjects(status) {
+  renderInventory("project-chips", status.projects || [], "project", "project-filter");
 }
 
 function sourceCard(source) {
@@ -299,6 +312,7 @@ function sourceCard(source) {
     ...(source.authors || []),
     ...(source.categories || []),
     ...(source.keywords || []),
+    ...(source.project || []),
     source.source_relative_path,
   ].join(" ").toLocaleLowerCase();
 
@@ -313,8 +327,13 @@ function sourceCard(source) {
   path.title = source.source_path || source.source_relative_path;
   body.append(path);
   body.append(node("p", "source-id", source.source_id));
-  if ((source.categories || []).length || (source.keywords || []).length) {
+  if (
+    (source.categories || []).length ||
+    (source.keywords || []).length ||
+    (source.project || []).length
+  ) {
     const tags = node("div", "source-tags");
+    tags.append(tagList(source.project, "tag tag-project"));
     tags.append(tagList(source.categories, "tag"));
     tags.append(tagList(source.keywords, "tag tag-keyword"));
     body.append(tags);
@@ -514,6 +533,7 @@ async function search(event) {
     top_k: Number(byId("top-k").value),
     categories: hasCapability("metadata_filters") ? listValue(byId("category-filter").value) : null,
     categories_any: hasCapability("category_partitions") ? listValue(byId("category-any-filter").value) : null,
+    projects_any: hasCapability("project_metadata") ? listValue(byId("project-any-filter").value) : null,
     keywords: hasCapability("metadata_filters") ? listValue(byId("keyword-filter").value) : null,
     document_ids: null,
     source_ids: hasCapability("source_selection") ? listValue(byId("include-source-filter").value) : null,
@@ -582,6 +602,7 @@ function openMetadata(documentId) {
   byId("metadata-doi").value = source.doi || "";
   byId("metadata-categories").value = (source.categories || []).join(", ");
   byId("metadata-keywords").value = (source.keywords || []).join(", ");
+  byId("metadata-project").value = (source.project || []).join(", ");
   byId("metadata-dialog").showModal();
 }
 
@@ -597,16 +618,20 @@ function openExclusion(documentId) {
 async function saveMetadata(event) {
   event.preventDefault();
   const yearText = byId("metadata-year").value.trim();
+  const metadata = {
+    title: byId("metadata-title").value.trim(),
+    authors: listValue(byId("metadata-authors").value),
+    year: yearText ? Number(yearText) : null,
+    doi: byId("metadata-doi").value.trim(),
+    categories: listValue(byId("metadata-categories").value),
+    keywords: listValue(byId("metadata-keywords").value),
+  };
+  if (hasCapability("project_metadata")) {
+    metadata.project = listValue(byId("metadata-project").value);
+  }
   const payload = {
     source_path: byId("metadata-source-path").value,
-    metadata: {
-      title: byId("metadata-title").value.trim(),
-      authors: listValue(byId("metadata-authors").value),
-      year: yearText ? Number(yearText) : null,
-      doi: byId("metadata-doi").value.trim(),
-      categories: listValue(byId("metadata-categories").value),
-      keywords: listValue(byId("metadata-keywords").value),
-    },
+    metadata,
   };
   setBusy(true, "Saving reviewed metadata…");
   try {
@@ -750,6 +775,7 @@ function handleAction(event) {
     if (hit) copyText(inlineText(hit.citation), "Citation copied.");
   } else if (action === "ingest") byId("ingest-dialog").showModal();
   else if (action === "partition-filter") addSearchFilter("category-any-filter", value);
+  else if (action === "project-filter") addSearchFilter("project-any-filter", value);
   else if (action === "only-source") addSearchFilter("include-source-filter", value);
   else if (action === "exclude-from-search") addSearchFilter("exclude-source-filter", value);
 }
@@ -788,6 +814,7 @@ function initialize() {
   byId("results").addEventListener("click", handleAction);
   byId("source-list").addEventListener("click", handleAction);
   byId("partition-chips").addEventListener("click", handleAction);
+  byId("project-chips").addEventListener("click", handleAction);
   byId("excluded-list").addEventListener("click", handleAction);
   loadWorkspace();
 }

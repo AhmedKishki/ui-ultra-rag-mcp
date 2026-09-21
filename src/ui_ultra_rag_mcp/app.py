@@ -163,6 +163,16 @@ async def _sources(request: Request) -> Response:
                     if capabilities.category_partitions
                     else None
                 ),
+                "projects": (
+                    _query_list(request, "projects")
+                    if capabilities.project_metadata
+                    else None
+                ),
+                "projects_any": (
+                    _query_list(request, "projects_any")
+                    if capabilities.project_metadata
+                    else None
+                ),
                 "keywords": _query_list(request, "keywords"),
             },
         )
@@ -177,6 +187,8 @@ async def _search(request: Request) -> Response:
         "top_k",
         "categories",
         "categories_any",
+        "projects",
+        "projects_any",
         "keywords",
         "document_ids",
         "source_ids",
@@ -196,6 +208,13 @@ async def _search(request: Request) -> Response:
         raise HTTPException(
             status_code=400,
             detail="Category partitions are not available",
+        )
+    if not capabilities.project_metadata and (
+        body.get("projects") or body.get("projects_any")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Project metadata is not available",
         )
     if not capabilities.source_selection and (
         body.get("source_ids") or body.get("exclude_source_ids")

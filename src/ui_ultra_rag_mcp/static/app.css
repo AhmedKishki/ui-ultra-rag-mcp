@@ -532,6 +532,12 @@ h3 {
   background: white;
 }
 
+.tag-project {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 .tag-button {
   cursor: pointer;
   font: inherit;
