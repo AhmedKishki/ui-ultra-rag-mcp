@@ -24,6 +24,9 @@ function applyProfile(profile) {
   byId("ingest-intro").textContent = profile.ingest_intro;
   byId("footer-text").textContent = profile.footer_text;
   byId("bundle-import-intro").textContent = profile.bundle_import_intro;
+  const versionLabel = byId("version-label");
+  versionLabel.textContent = profile.version_label || "";
+  versionLabel.hidden = !profile.version_label;
   document.querySelectorAll("[data-capability]").forEach((element) => {
     element.hidden = !hasCapability(element.dataset.capability);
   });

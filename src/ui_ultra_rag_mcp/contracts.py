@@ -57,6 +57,7 @@ class UIProfile:
         "Export this generation? The archive may contain complete original sources."
     )
     capabilities: UICapabilities = UICapabilities()
+    version_label: str = ""
 
     def __post_init__(self) -> None:
         if not self.application_name.strip():

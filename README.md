@@ -15,6 +15,7 @@ The `mcp` in the name identifies the interface it is designed to consume; it doe
 - optional metadata editing, source exclusion, source-file access, filters, reranking, and portable-bundle controls;
 - optional per-query source selection, category-partition, and project-tag filters for servers that support them;
 - capability flags so an adapter can hide unsupported actions;
+- an optional header label an adapter fills with its own version and this package's, so the running software is visible in the browser;
 - same-origin checks for writes, a strict content security policy, and loopback-only serving; and
 - no dependency on FastMCP, UltraRAG internals, or a particular storage layout.
 
@@ -93,6 +94,8 @@ app = create_ui_app(
 )
 run_ui(app, host="127.0.0.1", port=5051)
 ```
+
+`UIProfile.version_label` is an optional short string shown under the project name in the header. A consuming server normally fills it with its own version and this package's, so an operator can see which software the running browser session is actually using. Leaving it empty hides the element.
 
 ## Development
 

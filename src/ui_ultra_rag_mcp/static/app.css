@@ -94,6 +94,7 @@ summary {
 
 .project-label,
 .project-path,
+.version-label,
 .stat-detail,
 .source-path,
 .source-byline,
@@ -125,6 +126,12 @@ code {
 }
 
 .project-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

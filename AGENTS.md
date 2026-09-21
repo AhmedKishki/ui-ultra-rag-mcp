@@ -16,7 +16,7 @@ This repository owns reusable local UI infrastructure for UltraRAG-derived MCP s
 
 ## Public package contract
 
-- `UIProfile` supplies labels and supported capabilities.
+- `UIProfile` supplies labels and supported capabilities, including the optional `version_label` the header shows under the project name.
 - `UIAdapter` normalizes one server to the document-workspace operations.
 - Portable bundle buttons only forward `export_bundle` and `import_bundle`; archive placement, validation, and storage remain adapter/server concerns.
 - `source_selection`, `category_partitions`, and `project_metadata` are opt-in and default to `False`: they only forward `source_ids`, `exclude_source_ids`, `categories_any`, `projects`, and `projects_any`, and the partition and project lists are read from the status response's `categories` and `projects` entries. Never derive partitions or project tags from source metadata in this repository, and keep a request carrying a disabled filter field a 400 rather than a forwarded call.

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import tomllib
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import pytest
 from starlette.testclient import TestClient
 
+import ui_ultra_rag_mcp
 from ui_ultra_rag_mcp import (
     SourceFile,
     UICapabilities,
@@ -407,3 +410,42 @@ def test_configuration_rejects_ambiguous_adapter_setup(tmp_path: Path) -> None:
         assert "exactly one" in str(exc)
     else:
         raise AssertionError("ambiguous adapter setup was accepted")
+
+
+def test_version_label_defaults_to_empty(tmp_path: Path) -> None:
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    app = create_ui_app(profile=_profile(), adapter=FakeAdapter(source))
+
+    with TestClient(app) as client:
+        payload = client.get("/api/ui").json()
+
+    assert payload["version_label"] == ""
+
+
+def test_version_label_is_served_and_rendered(tmp_path: Path) -> None:
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    profile = UIProfile(
+        application_name="Test UltraRAG",
+        version_label="server 1.2.3 · ui 0.5.0",
+    )
+    app = create_ui_app(profile=profile, adapter=FakeAdapter(source))
+
+    with TestClient(app) as client:
+        payload = client.get("/api/ui").json()
+        page = client.get("/")
+        script = client.get("/assets/app.js")
+
+    assert payload["version_label"] == "server 1.2.3 · ui 0.5.0"
+    assert 'id="version-label"' in page.text
+    assert "version_label" in script.text
+
+
+def test_package_version_matches_pyproject() -> None:
+    if ui_ultra_rag_mcp.__version__ == "0.0.0+source":
+        pytest.skip("ui-ultra-rag-mcp is not installed in this environment")
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    with pyproject.open("rb") as handle:
+        expected = tomllib.load(handle)["project"]["version"]
+    assert ui_ultra_rag_mcp.__version__ == expected
