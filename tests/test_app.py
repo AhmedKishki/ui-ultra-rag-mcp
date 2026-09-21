@@ -116,8 +116,48 @@ def test_workspace_and_normalized_read_operations(tmp_path: Path) -> None:
     assert passage.json()["requested_chunk_id"] == "chunk-1"
     assert (
         "list_sources",
-        {"categories": ["theory", "history"], "keywords": None},
+        {"categories": ["theory", "history"], "categories_any": None, "keywords": None},
     ) in adapter.calls
+
+
+def test_source_selection_and_partitions_are_forwarded(tmp_path: Path) -> None:
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    adapter = FakeAdapter(source)
+    app = create_ui_app(
+        profile=_profile(source_selection=True, category_partitions=True),
+        adapter=adapter,
+    )
+
+    with TestClient(app) as client:
+        partitions = client.get("/api/sources?categories_any=theory,history")
+        search = client.post(
+            "/api/search",
+            json={
+                "query": "evidence",
+                "top_k": 4,
+                "categories_any": ["theory"],
+                "source_ids": ["src_1"],
+                "exclude_source_ids": ["src_2"],
+            },
+        )
+
+    assert partitions.status_code == 200
+    assert (
+        "list_sources",
+        {
+            "categories": None,
+            "categories_any": ["theory", "history"],
+            "keywords": None,
+        },
+    ) in adapter.calls
+    assert search.status_code == 200
+    forwarded = next(
+        arguments for operation, arguments in adapter.calls if operation == "search"
+    )
+    assert forwarded["categories_any"] == ["theory"]
+    assert forwarded["source_ids"] == ["src_1"]
+    assert forwarded["exclude_source_ids"] == ["src_2"]
 
 
 def test_writes_and_source_file_are_constrained(tmp_path: Path) -> None:
@@ -215,6 +255,8 @@ def test_disabled_capabilities_are_reported_and_enforced(tmp_path: Path) -> None
         source_inclusion=False,
         source_files=False,
         metadata_filters=False,
+        source_selection=False,
+        category_partitions=False,
         reranking=False,
     )
     app = create_ui_app(profile=profile, adapter=FakeAdapter(source))
@@ -227,6 +269,14 @@ def test_disabled_capabilities_are_reported_and_enforced(tmp_path: Path) -> None
             "/api/search",
             json={"query": "evidence", "rerank": True},
         )
+        partitions = client.post(
+            "/api/search",
+            json={"query": "evidence", "categories_any": ["theory"]},
+        )
+        selection = client.post(
+            "/api/search",
+            json={"query": "evidence", "source_ids": ["src_1"]},
+        )
         source_file = client.get("/api/source-file?path=evidence.pdf")
         export = client.post("/api/bundles/export", json={})
         bundle_import = client.post(
@@ -238,6 +288,8 @@ def test_disabled_capabilities_are_reported_and_enforced(tmp_path: Path) -> None
     assert sources.status_code == 404
     assert ingest.status_code == 404
     assert rerank.status_code == 400
+    assert partitions.status_code == 400
+    assert selection.status_code == 400
     assert source_file.status_code == 404
     assert export.status_code == 404
     assert bundle_import.status_code == 404

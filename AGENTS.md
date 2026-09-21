@@ -19,6 +19,7 @@ This repository owns reusable local UI infrastructure for UltraRAG-derived MCP s
 - `UIProfile` supplies labels and supported capabilities.
 - `UIAdapter` normalizes one server to the document-workspace operations.
 - Portable bundle buttons only forward `export_bundle` and `import_bundle`; archive placement, validation, and storage remain adapter/server concerns.
+- `source_selection` and `category_partitions` are opt-in and default to `False`: they only forward `source_ids`, `exclude_source_ids`, and `categories_any`, and the partition list is read from the status response's `categories` entries. Never derive partitions from source metadata in this repository, and keep a request carrying a disabled filter field a 400 rather than a forwarded call.
 - `create_ui_app` builds the Starlette application.
 - `run_ui` starts Uvicorn on a loopback address.
 

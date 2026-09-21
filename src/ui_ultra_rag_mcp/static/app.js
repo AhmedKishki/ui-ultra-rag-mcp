@@ -252,12 +252,44 @@ function renderStatus(status) {
     notice.hidden = true;
   }
   configureRetrieval(status);
+  renderPartitions(status);
 }
 
 function tagList(values, className = "tag") {
   const fragment = document.createDocumentFragment();
   (values || []).forEach((value) => fragment.append(node("span", className, value)));
   return fragment;
+}
+
+function addSearchFilter(field, value) {
+  const input = byId(field);
+  if (!input || !value) return;
+  const values = listValue(input.value);
+  if (!values.includes(value)) values.push(value);
+  input.value = values.join(", ");
+  input.focus();
+  toast(`Added to the search filter: ${value}`);
+}
+
+function renderPartitions(status) {
+  const container = byId("partition-chips");
+  if (!container) return;
+  const partitions = status.categories || [];
+  container.replaceChildren();
+  if (!partitions.length) {
+    container.append(node("span", "form-note", "No reviewed categories yet."));
+    return;
+  }
+  partitions.forEach((item) => {
+    const chip = button(
+      `${item.category} · ${formatNumber(item.searchable_source_count)}`,
+      "partition-filter",
+      item.category,
+      "tag tag-button",
+    );
+    chip.title = `Search ${item.category}`;
+    container.append(chip);
+  });
 }
 
 function sourceCard(source) {
@@ -280,6 +312,7 @@ function sourceCard(source) {
   const path = node("p", "source-path", source.source_relative_path);
   path.title = source.source_path || source.source_relative_path;
   body.append(path);
+  body.append(node("p", "source-id", source.source_id));
   if ((source.categories || []).length || (source.keywords || []).length) {
     const tags = node("div", "source-tags");
     tags.append(tagList(source.categories, "tag"));
@@ -296,6 +329,10 @@ function sourceCard(source) {
   }
   if (hasCapability("source_inclusion")) {
     actions.append(button("Exclude", "exclude-source", source.document_id));
+  }
+  if (hasCapability("source_selection")) {
+    actions.append(button("Only this source", "only-source", source.source_id));
+    actions.append(button("Exclude from search", "exclude-from-search", source.source_id));
   }
   card.append(body, actions);
   return card;
@@ -476,8 +513,11 @@ async function search(event) {
     query,
     top_k: Number(byId("top-k").value),
     categories: hasCapability("metadata_filters") ? listValue(byId("category-filter").value) : null,
+    categories_any: hasCapability("category_partitions") ? listValue(byId("category-any-filter").value) : null,
     keywords: hasCapability("metadata_filters") ? listValue(byId("keyword-filter").value) : null,
     document_ids: null,
+    source_ids: hasCapability("source_selection") ? listValue(byId("include-source-filter").value) : null,
+    exclude_source_ids: hasCapability("source_selection") ? listValue(byId("exclude-source-filter").value) : null,
     retrieval_method: method,
     rerank: hasCapability("reranking") && byId("rerank").checked,
   };
@@ -709,6 +749,9 @@ function handleAction(event) {
     const hit = state.hits.get(value);
     if (hit) copyText(inlineText(hit.citation), "Citation copied.");
   } else if (action === "ingest") byId("ingest-dialog").showModal();
+  else if (action === "partition-filter") addSearchFilter("category-any-filter", value);
+  else if (action === "only-source") addSearchFilter("include-source-filter", value);
+  else if (action === "exclude-from-search") addSearchFilter("exclude-source-filter", value);
 }
 
 function filterSources(event) {
@@ -744,6 +787,7 @@ function initialize() {
   byId("source-filter").addEventListener("input", filterSources);
   byId("results").addEventListener("click", handleAction);
   byId("source-list").addEventListener("click", handleAction);
+  byId("partition-chips").addEventListener("click", handleAction);
   byId("excluded-list").addEventListener("click", handleAction);
   loadWorkspace();
 }

@@ -532,6 +532,41 @@ h3 {
   background: white;
 }
 
+.tag-button {
+  cursor: pointer;
+  font: inherit;
+}
+
+.tag-button:hover,
+.tag-button:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.source-id {
+  margin: 0.25rem 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.partition-summary {
+  margin-top: 1rem;
+}
+
+.partition-summary h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+}
+
+.partition-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
 .result-footer {
   display: flex;
   align-items: center;

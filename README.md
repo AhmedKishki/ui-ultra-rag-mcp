@@ -13,6 +13,7 @@ The `mcp` in the name identifies the interface it is designed to consume; it doe
 - a basic search-and-sources workspace with no frontend build step;
 - status, search, passage context, source listing, and ingestion views;
 - optional metadata editing, source exclusion, source-file access, filters, reranking, and portable-bundle controls;
+- optional per-query source selection and category-partition filters for servers that support them;
 - capability flags so an adapter can hide unsupported actions;
 - same-origin checks for writes, a strict content security policy, and loopback-only serving; and
 - no dependency on FastMCP, UltraRAG internals, or a particular storage layout.
@@ -68,6 +69,15 @@ class UIAdapter(Protocol):
 | `import_bundle` | Validate and import a named project-local bundle |
 
 Bundle controls are disabled by default. A consuming server enables `bundle_export` and/or `bundle_import` in `UICapabilities` only when its adapter implements those operations. The shared UI never reads an archive itself. Servers that distinguish an ordinary re-ingestion from a forced rebuild can also enable `force_recompute`; the UI then sends that flag only for its **Regenerate** action.
+
+Two further capability flags are opt-in and cover filters a server may not implement:
+
+| Capability | What the UI adds | Search fields it sends |
+|---|---|---|
+| `source_selection` | "Limit to named sources" with include and exclude lists, a stable-ID line on every source card, and **Only this source** / **Exclude from search** actions | `source_ids`, `exclude_source_ids` |
+| `category_partitions` | "Limit to corpus partitions" any-of filter and a partition list beside the status, with one chip per category and its searchable source count | `categories_any` (and `categories_any` on the source listing) |
+
+Both default to `False`, so an adapter that does not support them sees neither the controls nor the extra request fields, and a request that still carries them is rejected with a 400 rather than forwarded. The partition list is read from the status response's `categories` entries; the UI never derives partitions from source metadata itself.
 
 The adapter owns MCP startup and shutdown, error translation, source-file authorization, and schema normalization. The shared host never reads an index or discovers files itself. See the tests for a minimal in-memory adapter.
 

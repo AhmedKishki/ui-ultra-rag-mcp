@@ -151,12 +151,18 @@ def _query_list(request: Request, name: str) -> list[str] | None:
 
 
 async def _sources(request: Request) -> Response:
+    capabilities = request.app.state.profile.capabilities
     return JSONResponse(
         await _adapter_call(
             request,
             "list_sources",
             {
                 "categories": _query_list(request, "categories"),
+                "categories_any": (
+                    _query_list(request, "categories_any")
+                    if capabilities.category_partitions
+                    else None
+                ),
                 "keywords": _query_list(request, "keywords"),
             },
         )
@@ -165,12 +171,16 @@ async def _sources(request: Request) -> Response:
 
 async def _search(request: Request) -> Response:
     body = await _json_body(request)
+    capabilities = request.app.state.profile.capabilities
     allowed = {
         "query",
         "top_k",
         "categories",
+        "categories_any",
         "keywords",
         "document_ids",
+        "source_ids",
+        "exclude_source_ids",
         "retrieval_method",
         "rerank",
     }
@@ -182,7 +192,16 @@ async def _search(request: Request) -> Response:
         )
     if not isinstance(body.get("query"), str) or not body["query"].strip():
         raise HTTPException(status_code=400, detail="Search requires a non-empty query")
-    if body.get("rerank") and not request.app.state.profile.capabilities.reranking:
+    if body.get("categories_any") and not capabilities.category_partitions:
+        raise HTTPException(
+            status_code=400,
+            detail="Category partitions are not available",
+        )
+    if not capabilities.source_selection and (
+        body.get("source_ids") or body.get("exclude_source_ids")
+    ):
+        raise HTTPException(status_code=400, detail="Source selection is not available")
+    if body.get("rerank") and not capabilities.reranking:
         raise HTTPException(status_code=400, detail="Reranking is not available")
     return JSONResponse(await _adapter_call(request, "search", body))
 

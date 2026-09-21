@@ -20,6 +20,8 @@ class UICapabilities:
     source_inclusion: bool = True
     source_files: bool = True
     metadata_filters: bool = True
+    source_selection: bool = False
+    category_partitions: bool = False
     reranking: bool = True
     force_recompute: bool = False
     bundle_export: bool = False

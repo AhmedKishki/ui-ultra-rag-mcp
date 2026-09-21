@@ -110,6 +110,33 @@
               </label>
             </div>
           </details>
+
+          <details class="filter-drawer" data-capability="category_partitions">
+            <summary>Limit to corpus partitions</summary>
+            <div class="filter-fields">
+              <label for="category-any-filter">
+                <span class="field-label">Any of these categories</span>
+                <input id="category-any-filter" type="text" placeholder="Commodity fetishism, Digital defetishism">
+                <small>Comma separated; at least one category must match. Pick from the partition list beside the status.</small>
+              </label>
+            </div>
+          </details>
+
+          <details class="filter-drawer" data-capability="source_selection">
+            <summary>Limit to named sources</summary>
+            <div class="filter-fields">
+              <label for="include-source-filter">
+                <span class="field-label">Only these sources</span>
+                <input id="include-source-filter" type="text" placeholder="src_…, src_…">
+                <small>Stable source IDs, comma separated. Empty searches every source. Use “Only this source” in the Sources view.</small>
+              </label>
+              <label for="exclude-source-filter">
+                <span class="field-label">Exclude these sources</span>
+                <input id="exclude-source-filter" type="text" placeholder="src_…, src_…">
+                <small>Stable source IDs, comma separated. Empty excludes nothing. Use “Exclude from search” in the Sources view.</small>
+              </label>
+            </div>
+          </details>
         </form>
 
         <div id="search-summary" class="result-summary" hidden>
@@ -168,6 +195,12 @@
             <strong id="index-state" class="stat-value stat-value-state">Checking</strong>
             <span id="retrieval-detail" class="stat-detail">BM25 + dense</span>
           </article>
+        </div>
+
+        <div id="partition-summary" class="partition-summary" data-capability="category_partitions" hidden>
+          <h3>Corpus partitions</h3>
+          <p class="form-note">Reviewed categories with the number of searchable sources carrying each. Select one to search it; select several to search their union.</p>
+          <div id="partition-chips" class="partition-chips"></div>
         </div>
 
         <div id="status-notice" class="notice" hidden>
