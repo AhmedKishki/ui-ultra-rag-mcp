@@ -5,6 +5,9 @@ const state = {
   status: null,
   sources: [],
   excludedSources: [],
+  memory: null,
+  memoryRounds: [],
+  memoryStanding: null,
   busy: false,
   forceRecompute: false,
 };
@@ -24,6 +27,13 @@ function applyProfile(profile) {
   byId("ingest-intro").textContent = profile.ingest_intro;
   byId("footer-text").textContent = profile.footer_text;
   byId("bundle-import-intro").textContent = profile.bundle_import_intro;
+  byId("memory-tab-label").textContent = profile.memory_label;
+  byId("memory-heading").textContent = profile.memory_label;
+  byId("memory-standing-heading").textContent = profile.memory_standing_label;
+  byId("memory-rounds-heading").textContent = profile.memory_rounds_label;
+  const memoryNote = byId("memory-note");
+  memoryNote.textContent = profile.memory_note || "";
+  memoryNote.hidden = !profile.memory_note;
   const versionLabel = byId("version-label");
   versionLabel.textContent = profile.version_label || "";
   versionLabel.hidden = !profile.version_label;
@@ -308,6 +318,197 @@ function renderProjects(status) {
   renderInventory("project-chips", status.projects || [], "project", "project-filter");
 }
 
+function memoryScope() {
+  return byId("memory-scope").value || state.memory?.scopes?.[0]?.scope || "";
+}
+
+function memoryScopeEntry(scope) {
+  return (state.memory?.scopes || []).find((entry) => entry.scope === scope) || null;
+}
+
+function renderMemoryStatus(payload) {
+  state.memory = payload;
+  const scopes = payload.scopes || [];
+  const select = byId("memory-scope");
+  const previous = select.value;
+  select.replaceChildren();
+  scopes.forEach((entry) => {
+    const option = node("option", null, `${entry.label} · ${formatNumber(entry.round_count)}`);
+    option.value = entry.scope;
+    if (entry.directory) option.title = entry.directory;
+    select.append(option);
+  });
+  select.disabled = scopes.length < 2;
+  select.value = scopes.some((entry) => entry.scope === previous)
+    ? previous
+    : scopes[0]?.scope || "";
+  byId("memory-tab-count").textContent = String(scopes.length);
+
+  const active = memoryScopeEntry(select.value);
+  byId("memory-status-line").textContent = active
+    ? [
+        active.directory,
+        `${formatNumber(active.round_count)} recorded round${active.round_count === 1 ? "" : "s"}`,
+        active.latest_round_date ? `latest ${active.latest_round_date}` : "no rounds yet",
+      ].join(" · ")
+    : "This adapter reports no memory scope.";
+}
+
+function memoryRoundCard(round, index) {
+  const card = node("article", "memory-round");
+  card.dataset.searchText = [round.date, round.time, round.user, round.assistant]
+    .map(inlineText)
+    .join(" ")
+    .toLocaleLowerCase();
+
+  const header = node("div", "result-card-header");
+  header.append(node("h4", "result-title", `${round.date} ${round.time}`));
+  header.append(node("span", "locator-badge", round.source_file || "Memory round"));
+  card.append(header);
+
+  const lines = node("div", "memory-lines");
+  [
+    ["user", round.user],
+    ["assistant", round.assistant],
+  ].forEach(([speaker, text]) => {
+    const line = node("p", `memory-line memory-line-${speaker}`);
+    line.append(node("span", "memory-speaker", speaker));
+    line.append(node("span", "memory-text", readableText(text)));
+    lines.append(line);
+  });
+  card.append(lines);
+
+  const actions = node("div", "result-actions");
+  actions.append(button("Copy round", "copy-round", String(index)));
+  card.append(actions);
+  return card;
+}
+
+function renderMemoryRounds(payload) {
+  state.memoryRounds = payload.rounds || [];
+  const container = byId("memory-rounds");
+  container.replaceChildren();
+  if (!state.memoryRounds.length) {
+    container.append(
+      node("div", "no-records", "No rounds have been recorded in this scope."),
+    );
+    return;
+  }
+  state.memoryRounds.forEach((round, index) =>
+    container.append(memoryRoundCard(round, index)),
+  );
+  if (payload.truncated) {
+    container.append(
+      node(
+        "div",
+        "form-note",
+        `Showing the newest ${formatNumber(state.memoryRounds.length)} of ${formatNumber(payload.round_count)} rounds.`,
+      ),
+    );
+  }
+}
+
+function renderMemoryStanding(payload) {
+  state.memoryStanding = payload;
+  byId("memory-standing").textContent = payload.content || "";
+  byId("memory-standing-state").textContent = payload.sha256
+    ? `sha256 ${compactId(payload.sha256)}`
+    : "not created yet";
+}
+
+async function loadMemory() {
+  if (!hasCapability("memory")) return;
+  renderMemoryStatus(await api("/api/memory"));
+  const scope = encodeURIComponent(memoryScope());
+  const [rounds, standing] = await Promise.all([
+    api(`/api/memory/rounds?scope=${scope}&limit=20`),
+    api(`/api/memory/standing?scope=${scope}`),
+  ]);
+  renderMemoryRounds(rounds);
+  renderMemoryStanding(standing);
+}
+
+async function refreshMemory({ announce = false } = {}) {
+  if (!hasCapability("memory")) return;
+  setBusy(true, "Reading memory…");
+  try {
+    await loadMemory();
+    if (announce) toast("Memory refreshed.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function appendMemory(event) {
+  event.preventDefault();
+  const scope = memoryScope();
+  const userMessage = byId("memory-append-user").value.trim();
+  const assistantMessage = byId("memory-append-assistant").value.trim();
+  if (!scope || !userMessage || !assistantMessage) {
+    toast("A scope, a user line, and an assistant line are required.", true);
+    return;
+  }
+  setBusy(true, "Saving the round…");
+  try {
+    await api("/api/memory/append", {
+      method: "POST",
+      body: JSON.stringify({
+        scope,
+        user_message: userMessage,
+        assistant_message: assistantMessage,
+      }),
+    });
+    byId("memory-append-user").value = "";
+    byId("memory-append-assistant").value = "";
+    await loadMemory();
+    toast("Round saved.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function openStandingEditor() {
+  byId("memory-standing-content").value = state.memoryStanding?.content || "";
+  byId("memory-standing-dialog").showModal();
+}
+
+async function saveStanding(event) {
+  event.preventDefault();
+  const scope = memoryScope();
+  const content = byId("memory-standing-content").value;
+  if (!scope || !content.trim()) {
+    toast("Standing memory must not be empty.", true);
+    return;
+  }
+  const body = { scope, content };
+  if (state.memoryStanding?.sha256) body.expected_sha256 = state.memoryStanding.sha256;
+  setBusy(true, "Saving standing memory…");
+  try {
+    await api("/api/memory/standing", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    byId("memory-standing-dialog").close();
+    await loadMemory();
+    toast("Standing memory saved.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function filterRounds(event) {
+  const query = event.target.value.trim().toLocaleLowerCase();
+  document.querySelectorAll(".memory-round").forEach((card) => {
+    card.hidden = Boolean(query) && !card.dataset.searchText.includes(query);
+  });
+}
+
 function sourceCard(source) {
   const card = node("article", "source-card");
   card.dataset.searchText = [
@@ -412,6 +613,13 @@ async function loadWorkspace({ announce = false } = {}) {
     ]);
     renderStatus(status);
     renderSources(sources);
+    if (hasCapability("memory")) {
+      try {
+        await loadMemory();
+      } catch (error) {
+        toast(error.message, true);
+      }
+    }
     setConnection("ready", "Local · ready");
     if (announce) toast("Workspace refreshed.");
   } catch (error) {
@@ -781,6 +989,14 @@ function handleAction(event) {
   else if (action === "project-filter") addSearchFilter("project-any-filter", value);
   else if (action === "only-source") addSearchFilter("include-source-filter", value);
   else if (action === "exclude-from-search") addSearchFilter("exclude-source-filter", value);
+  else if (action === "copy-standing") {
+    copyText(state.memoryStanding?.content || "", "Standing memory copied.");
+  } else if (action === "copy-round") {
+    const round = state.memoryRounds[Number(value)];
+    if (round) {
+      copyText(`user: ${round.user}\nassistant: ${round.assistant}`, "Round copied.");
+    }
+  } else if (action === "edit-standing") openStandingEditor();
 }
 
 function filterSources(event) {
@@ -814,6 +1030,11 @@ function initialize() {
   byId("ingest-form").addEventListener("submit", ingest);
   byId("bundle-form").addEventListener("submit", importBundle);
   byId("source-filter").addEventListener("input", filterSources);
+  byId("memory-scope").addEventListener("change", () => refreshMemory());
+  byId("memory-round-filter").addEventListener("input", filterRounds);
+  byId("memory-append-form").addEventListener("submit", appendMemory);
+  byId("memory-standing-form").addEventListener("submit", saveStanding);
+  byId("memory-rounds").addEventListener("click", handleAction);
   byId("results").addEventListener("click", handleAction);
   byId("source-list").addEventListener("click", handleAction);
   byId("partition-chips").addEventListener("click", handleAction);

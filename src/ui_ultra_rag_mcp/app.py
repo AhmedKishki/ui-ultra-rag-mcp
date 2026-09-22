@@ -39,6 +39,11 @@ _OPERATION_CAPABILITY = {
     "set_source_inclusion": "source_inclusion",
     "export_bundle": "bundle_export",
     "import_bundle": "bundle_import",
+    "memory_status": "memory",
+    "memory_rounds": "memory",
+    "memory_standing": "memory",
+    "memory_append": "memory_writes",
+    "memory_standing_save": "memory_writes",
 }
 
 
@@ -329,6 +334,86 @@ async def _source_file(request: Request) -> Response:
     )
 
 
+async def _memory_status(request: Request) -> Response:
+    return JSONResponse(await _adapter_call(request, "memory_status"))
+
+
+def _memory_scope(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise HTTPException(status_code=400, detail="A memory scope is required")
+    return value.strip()
+
+
+def _reject_unknown(body: Mapping[str, Any], allowed: set[str]) -> None:
+    unknown = set(body) - allowed
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported memory fields: {', '.join(sorted(unknown))}",
+        )
+
+
+async def _memory_rounds(request: Request) -> Response:
+    try:
+        limit = int(request.query_params.get("limit", "20"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="limit must be an integer") from exc
+    if not 1 <= limit <= 200:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 200")
+    return JSONResponse(
+        await _adapter_call(
+            request,
+            "memory_rounds",
+            {"scope": _memory_scope(request.query_params.get("scope")), "limit": limit},
+        )
+    )
+
+
+async def _memory_standing(request: Request) -> Response:
+    return JSONResponse(
+        await _adapter_call(
+            request,
+            "memory_standing",
+            {"scope": _memory_scope(request.query_params.get("scope"))},
+        )
+    )
+
+
+async def _memory_append(request: Request) -> Response:
+    body = await _json_body(request)
+    _reject_unknown(body, {"scope", "user_message", "assistant_message"})
+    for field in ("user_message", "assistant_message"):
+        if not isinstance(body.get(field), str) or not body[field].strip():
+            raise HTTPException(status_code=400, detail=f"{field} must not be empty")
+    return JSONResponse(
+        await _adapter_call(
+            request,
+            "memory_append",
+            {
+                "scope": _memory_scope(body.get("scope")),
+                "user_message": body["user_message"].strip(),
+                "assistant_message": body["assistant_message"].strip(),
+            },
+        )
+    )
+
+
+async def _memory_standing_save(request: Request) -> Response:
+    body = await _json_body(request)
+    _reject_unknown(body, {"scope", "content", "expected_sha256"})
+    if not isinstance(body.get("content"), str) or not body["content"].strip():
+        raise HTTPException(status_code=400, detail="content must not be empty")
+    if "expected_sha256" in body and not isinstance(body["expected_sha256"], str):
+        raise HTTPException(status_code=400, detail="expected_sha256 must be a string")
+    arguments: dict[str, Any] = {
+        "scope": _memory_scope(body.get("scope")),
+        "content": body["content"],
+    }
+    if "expected_sha256" in body:
+        arguments["expected_sha256"] = body["expected_sha256"]
+    return JSONResponse(await _adapter_call(request, "memory_standing_save", arguments))
+
+
 async def _security_headers(request: Request, call_next: Any) -> Response:
     response = await call_next(request)
     response.headers["Content-Security-Policy"] = (
@@ -400,6 +485,11 @@ def create_ui_app(
         Route("/api/bundles/export", _export_bundle, methods=["POST"]),
         Route("/api/bundles/import", _import_bundle, methods=["POST"]),
         Route("/api/source-file", _source_file),
+        Route("/api/memory", _memory_status),
+        Route("/api/memory/rounds", _memory_rounds),
+        Route("/api/memory/standing", _memory_standing),
+        Route("/api/memory/append", _memory_append, methods=["POST"]),
+        Route("/api/memory/standing", _memory_standing_save, methods=["POST"]),
     ]
     app = Starlette(
         routes=routes,

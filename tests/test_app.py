@@ -71,6 +71,55 @@ class FakeAdapter:
                 "generation_id": "generation-imported",
                 "activated": arguments.get("activate", True),
             },
+            "memory_status": {
+                "scopes": [
+                    {
+                        "scope": "local",
+                        "label": "This project",
+                        "directory": "/project/.memory-rag",
+                        "standing_present": True,
+                        "round_count": 1,
+                        "latest_round_date": "2026-09-22",
+                    },
+                    {
+                        "scope": "global:ahmed",
+                        "label": "Global · ahmed",
+                        "directory": "/shared/memory/ahmed",
+                        "standing_present": True,
+                        "round_count": 0,
+                        "latest_round_date": None,
+                    },
+                ],
+            },
+            "memory_rounds": {
+                "scope": arguments.get("scope"),
+                "round_count": 1,
+                "truncated": False,
+                "rounds": [
+                    {
+                        "date": "2026-09-22",
+                        "time": "14:54:02",
+                        "user": "Where does the draft live?",
+                        "assistant": "In the project directory.",
+                        "source_file": "2026-09-22.md",
+                    }
+                ],
+            },
+            "memory_standing": {
+                "scope": arguments.get("scope"),
+                "content": "# MEMORY\nRemember the draft.\n",
+                "sha256": "d1g3st",
+            },
+            "memory_append": {
+                "status": "saved",
+                "scope": arguments.get("scope"),
+                "written": "/project/.memory-rag/project/2026-09-22.md",
+            },
+            "memory_standing_save": {
+                "status": "saved",
+                "scope": arguments.get("scope"),
+                "sha256": "n3w-digest",
+            },
         }
         return responses[operation]
 
@@ -440,6 +489,176 @@ def test_version_label_is_served_and_rendered(tmp_path: Path) -> None:
     assert payload["version_label"] == "server 1.2.3 · ui 0.5.0"
     assert 'id="version-label"' in page.text
     assert "version_label" in script.text
+
+
+def test_memory_view_is_capability_gated_and_forwarded(tmp_path: Path) -> None:
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    adapter = FakeAdapter(source)
+    app = create_ui_app(
+        profile=_profile(memory=True, memory_writes=True),
+        adapter=adapter,
+    )
+
+    with TestClient(app) as client:
+        status = client.get("/api/memory")
+        rounds = client.get("/api/memory/rounds?scope=local&limit=5")
+        standing = client.get("/api/memory/standing?scope=global:ahmed")
+        appended = client.post(
+            "/api/memory/append",
+            json={
+                "scope": "local",
+                "user_message": "Remember this.",
+                "assistant_message": "Remembered.",
+            },
+        )
+        saved = client.post(
+            "/api/memory/standing",
+            json={
+                "scope": "local",
+                "content": "# MEMORY\nRemember the draft.\n",
+                "expected_sha256": "d1g3st",
+            },
+        )
+
+    assert status.json()["scopes"][0]["scope"] == "local"
+    assert rounds.json()["rounds"][0]["assistant"] == "In the project directory."
+    assert standing.json()["scope"] == "global:ahmed"
+    assert appended.json()["status"] == "saved"
+    assert saved.json()["sha256"] == "n3w-digest"
+    assert ("memory_rounds", {"scope": "local", "limit": 5}) in adapter.calls
+    assert ("memory_standing", {"scope": "global:ahmed"}) in adapter.calls
+    assert (
+        "memory_append",
+        {
+            "scope": "local",
+            "user_message": "Remember this.",
+            "assistant_message": "Remembered.",
+        },
+    ) in adapter.calls
+    assert (
+        "memory_standing_save",
+        {
+            "scope": "local",
+            "content": "# MEMORY\nRemember the draft.\n",
+            "expected_sha256": "d1g3st",
+        },
+    ) in adapter.calls
+
+
+def test_memory_operations_are_capability_gated(tmp_path: Path) -> None:
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    adapter = FakeAdapter(source)
+    append = {
+        "scope": "local",
+        "user_message": "Remember this.",
+        "assistant_message": "Remembered.",
+    }
+
+    with TestClient(create_ui_app(profile=_profile(), adapter=adapter)) as client:
+        hidden = [
+            client.get("/api/memory"),
+            client.get("/api/memory/rounds?scope=local"),
+            client.get("/api/memory/standing?scope=local"),
+            client.post("/api/memory/append", json=append),
+            client.post(
+                "/api/memory/standing",
+                json={"scope": "local", "content": "# MEMORY\n"},
+            ),
+        ]
+
+    with TestClient(
+        create_ui_app(profile=_profile(memory=True), adapter=adapter)
+    ) as client:
+        readable = client.get("/api/memory")
+        refused = client.post("/api/memory/append", json=append)
+
+    assert [response.status_code for response in hidden] == [404] * 5
+    assert readable.status_code == 200
+    assert refused.status_code == 404
+    assert all(operation != "memory_append" for operation, _ in adapter.calls)
+
+
+def test_memory_writes_are_validated(tmp_path: Path) -> None:
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    adapter = FakeAdapter(source)
+    app = create_ui_app(
+        profile=_profile(memory=True, memory_writes=True),
+        adapter=adapter,
+    )
+
+    with TestClient(app) as client:
+        no_scope = client.post(
+            "/api/memory/append",
+            json={"user_message": "a", "assistant_message": "b"},
+        )
+        empty_message = client.post(
+            "/api/memory/append",
+            json={"scope": "local", "user_message": "   ", "assistant_message": "b"},
+        )
+        unknown_field = client.post(
+            "/api/memory/append",
+            json={
+                "scope": "local",
+                "user_message": "a",
+                "assistant_message": "b",
+                "path": "../outside",
+            },
+        )
+        empty_content = client.post(
+            "/api/memory/standing",
+            json={"scope": "local", "content": "  "},
+        )
+        bad_digest = client.post(
+            "/api/memory/standing",
+            json={"scope": "local", "content": "# MEMORY\n", "expected_sha256": 7},
+        )
+        bad_limit = client.get("/api/memory/rounds?scope=local&limit=many")
+        wide_limit = client.get("/api/memory/rounds?scope=local&limit=900")
+        no_scope_read = client.get("/api/memory/standing")
+
+    assert no_scope.status_code == 400
+    assert empty_message.status_code == 400
+    assert unknown_field.status_code == 400
+    assert empty_content.status_code == 400
+    assert bad_digest.status_code == 400
+    assert bad_limit.status_code == 400
+    assert wide_limit.status_code == 400
+    assert no_scope_read.status_code == 400
+    assert not [
+        operation
+        for operation, _ in adapter.calls
+        if operation in {"memory_append", "memory_standing_save"}
+    ]
+
+
+def test_memory_labels_are_served_and_rendered(tmp_path: Path) -> None:
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    profile = UIProfile(
+        application_name="Test memory",
+        memory_label="Agent memory",
+        memory_standing_label="What is always remembered",
+        memory_rounds_label="Dialogue rounds",
+        memory_note="Memory stays on this machine.",
+        capabilities=UICapabilities(memory=True, memory_writes=True),
+    )
+    app = create_ui_app(profile=profile, adapter=FakeAdapter(source))
+
+    with TestClient(app) as client:
+        payload = client.get("/api/ui").json()
+        script = client.get("/assets/app.js")
+        page = client.get("/")
+
+    assert payload["memory_label"] == "Agent memory"
+    assert payload["memory_standing_label"] == "What is always remembered"
+    assert payload["memory_note"] == "Memory stays on this machine."
+    assert payload["capabilities"]["memory"] is True
+    assert payload["capabilities"]["memory_writes"] is True
+    assert 'id="memory-scope"' in page.text
+    assert "memory_standing_label" in script.text
 
 
 def test_package_version_matches_pyproject() -> None:

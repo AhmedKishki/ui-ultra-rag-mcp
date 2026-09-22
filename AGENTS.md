@@ -20,6 +20,7 @@ This repository owns reusable local UI infrastructure for UltraRAG-derived MCP s
 - `UIAdapter` normalizes one server to the document-workspace operations.
 - Portable bundle buttons only forward `export_bundle` and `import_bundle`; archive placement, validation, and storage remain adapter/server concerns.
 - `source_selection`, `category_partitions`, and `project_metadata` are opt-in and default to `False`: they only forward `source_ids`, `exclude_source_ids`, `categories_any`, `projects`, and `projects_any`, and the partition and project lists are read from the status response's `categories` and `projects` entries. Never derive partitions or project tags from source metadata in this repository, and keep a request carrying a disabled filter field a 400 rather than a forwarded call.
+- `memory` and `memory_writes` are opt-in and default to `False`: the Memory view, its routes, and the write controls appear only for an adapter that reports both. Never invent a memory scope, interpret one, or resolve a memory path here; a scope is an opaque adapter-supplied identifier whose label and directory arrive in the `memory_status` response. The `memory_standing_save` request forwards only the digest the page read, and the adapter owns the comparison and the refusal.
 - `create_ui_app` builds the Starlette application.
 - `run_ui` starts Uvicorn on a loopback address.
 
@@ -37,4 +38,4 @@ uv run pytest -q
 uv run python -m compileall -q src tests
 ```
 
-Tests must cover packaged static assets, the normalized routes, capability enforcement, same-origin write protection, and source-file delegation.
+Tests must cover packaged static assets, the normalized routes, capability enforcement, same-origin write protection, the memory view and its writes, and source-file delegation.

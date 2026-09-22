@@ -14,6 +14,7 @@ The `mcp` in the name identifies the interface it is designed to consume; it doe
 - status, search, passage context, source listing, and ingestion views;
 - optional metadata editing, source exclusion, source-file access, filters, reranking, and portable-bundle controls;
 - optional per-query source selection, category-partition, and project-tag filters for servers that support them;
+- an optional memory view for servers that expose memory scopes, with opt-in writes;
 - capability flags so an adapter can hide unsupported actions;
 - an optional header label an adapter fills with its own version and this package's, so the running software is visible in the browser;
 - same-origin checks for writes, a strict content security policy, and loopback-only serving; and
@@ -69,6 +70,75 @@ class UIAdapter(Protocol):
 | `export_bundle` | Export a server-defined portable project bundle |
 | `import_bundle` | Validate and import a named project-local bundle |
 
+### Optional memory view
+
+A server whose project keeps memory — a standing document plus dated rounds, or
+anything with that shape — can add a **Memory** view instead of a second
+application. Two capability flags are opt-in and default to `False`:
+
+| Capability | What the UI adds | Operations it enables |
+|---|---|---|
+| `memory` | A **Memory** view with a scope selector, the standing document, and the recorded rounds | `memory_status`, `memory_rounds`, `memory_standing` |
+| `memory_writes` | An **Add a round** form and an **Edit standing memory** dialog | `memory_append`, `memory_standing_save` |
+
+Both flags off means no tab, no route, and a 404 for every memory request. A
+**scope** is an opaque identifier the adapter supplies — the UI never invents one,
+never interprets one, and never resolves a memory path itself. The adapter's
+`memory_status` decides which scopes exist and what they are called:
+
+```json
+{
+  "scopes": [
+    {
+      "scope": "local",
+      "label": "This project",
+      "directory": "/projects/thesis/.memory-rag",
+      "standing_present": true,
+      "round_count": 3,
+      "latest_round_date": "2026-09-22"
+    }
+  ]
+}
+```
+
+`memory_rounds` takes `scope` and `limit` (1–200) and answers with the newest
+rounds first:
+
+```json
+{
+  "scope": "local",
+  "round_count": 3,
+  "truncated": false,
+  "rounds": [
+    {
+      "date": "2026-09-22",
+      "time": "14:54:02",
+      "user": "Where does the draft live?",
+      "assistant": "In the project directory.",
+      "source_file": "2026-09-22.md"
+    }
+  ]
+}
+```
+
+`memory_standing` returns the whole standing document with the digest of the
+bytes it read:
+
+```json
+{ "scope": "local", "content": "# MEMORY\n…", "sha256": "…" }
+```
+
+`memory_append` takes `scope`, `user_message`, and `assistant_message`; the
+adapter writes the round in its own format and returns `{"status": "saved", …}`.
+`memory_standing_save` takes `scope`, `content`, and the optional
+`expected_sha256` the page read, and the adapter decides whether to write: the UI
+only forwards the digest it displayed, so a document changed meanwhile can be
+refused rather than overwritten. Both writes are same-origin JSON, validated here,
+and refused with a 404 when `memory_writes` is off.
+
+The adapter owns every memory decision: which scopes exist, what they are called,
+where they live, what a round is, and whether a standing write is allowed.
+
 Bundle controls are disabled by default. A consuming server enables `bundle_export` and/or `bundle_import` in `UICapabilities` only when its adapter implements those operations. The shared UI never reads an archive itself. Servers that distinguish an ordinary re-ingestion from a forced rebuild can also enable `force_recompute`; the UI then sends that flag only for its **Regenerate** action.
 
 Two further capability flags are opt-in and cover filters a server may not implement:
@@ -81,7 +151,7 @@ Two further capability flags are opt-in and cover filters a server may not imple
 
 All three default to `False`, so an adapter that does not support them sees neither the controls nor the extra request fields, and a request that still carries them is rejected with a 400 rather than forwarded. The partition and project lists are read from the status response's `categories` and `projects` entries; the UI never derives either from source metadata itself.
 
-The adapter owns MCP startup and shutdown, error translation, source-file authorization, and schema normalization. The shared host never reads an index or discovers files itself. See the tests for a minimal in-memory adapter.
+The adapter owns MCP startup and shutdown, error translation, source-file and memory-scope authorization, and schema normalization. The shared host never reads an index, a memory directory, or any other file of its own accord. See the tests for a minimal in-memory adapter.
 
 Create and serve an app from the consuming project:
 

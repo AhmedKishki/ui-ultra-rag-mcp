@@ -11,7 +11,7 @@ from typing import Any, Protocol, TypeAlias
 
 @dataclass(frozen=True, slots=True)
 class UICapabilities:
-    """Optional document-workspace actions supported by one adapter."""
+    """Optional actions supported by one adapter, document and memory alike."""
 
     sources: bool = True
     passage_context: bool = True
@@ -27,6 +27,8 @@ class UICapabilities:
     force_recompute: bool = False
     bundle_export: bool = False
     bundle_import: bool = False
+    memory: bool = False
+    memory_writes: bool = False
 
     def as_dict(self) -> dict[str, bool]:
         return asdict(self)
@@ -56,6 +58,10 @@ class UIProfile:
     bundle_export_warning: str = (
         "Export this generation? The archive may contain complete original sources."
     )
+    memory_label: str = "Memory"
+    memory_standing_label: str = "Standing memory"
+    memory_rounds_label: str = "Recorded rounds"
+    memory_note: str = ""
     capabilities: UICapabilities = UICapabilities()
     version_label: str = ""
 

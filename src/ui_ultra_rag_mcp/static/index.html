@@ -50,6 +50,9 @@
         <button class="tab-button" type="button" data-view="sources" data-capability="sources" aria-selected="false">
           Sources <span id="source-tab-count" class="tab-count">0</span>
         </button>
+        <button class="tab-button" type="button" data-view="memory" data-capability="memory" aria-selected="false">
+          <span id="memory-tab-label">Memory</span> <span id="memory-tab-count" class="tab-count">0</span>
+        </button>
       </nav>
 
       <section id="search-view" class="view-panel is-active" data-panel="search">
@@ -181,6 +184,63 @@
           </div>
           <div id="excluded-list" class="excluded-list"></div>
         </section>
+      </section>
+
+      <section id="memory-view" class="view-panel" data-panel="memory" data-capability="memory" hidden>
+        <div class="memory-toolbar">
+          <h2 id="memory-heading">Memory</h2>
+          <label class="source-filter" for="memory-scope">
+            <span class="visually-hidden">Memory scope</span>
+            <select id="memory-scope"></select>
+          </label>
+        </div>
+
+        <p id="memory-note" class="form-note" hidden></p>
+        <p id="memory-status-line" class="result-meta"></p>
+
+        <article class="memory-standing">
+          <div class="section-heading-row">
+            <h3 id="memory-standing-heading">Standing memory</h3>
+            <span id="memory-standing-state" class="count-badge">—</span>
+          </div>
+          <div class="result-actions">
+            <button class="action-button" type="button" data-action="copy-standing">Copy standing memory</button>
+            <button class="action-button" type="button" data-action="edit-standing" data-capability="memory_writes" hidden>
+              Edit standing memory
+            </button>
+          </div>
+          <pre id="memory-standing" class="standing-document"></pre>
+        </article>
+
+        <section class="memory-rounds-section">
+          <div class="sources-toolbar">
+            <h3 id="memory-rounds-heading">Recorded rounds</h3>
+            <label class="source-filter" for="memory-round-filter">
+              <span class="visually-hidden">Filter rounds</span>
+              <input id="memory-round-filter" type="search" placeholder="Filter by date or text…">
+            </label>
+          </div>
+          <div id="memory-rounds" class="results-list" aria-live="polite"></div>
+        </section>
+
+        <form id="memory-append-form" class="memory-append" data-capability="memory_writes" hidden>
+          <h3>Add a round</h3>
+          <p class="form-note">
+            The server writes the round in its own memory format, exactly as the
+            agent's memory tools write one.
+          </p>
+          <label for="memory-append-user">
+            <span class="field-label">User line</span>
+            <textarea id="memory-append-user" rows="2" required></textarea>
+          </label>
+          <label for="memory-append-assistant">
+            <span class="field-label">Assistant line</span>
+            <textarea id="memory-append-assistant" rows="2" required></textarea>
+          </label>
+          <div class="dialog-actions">
+            <button id="memory-append-submit" class="button button-primary" type="submit">Save round</button>
+          </div>
+        </form>
       </section>
 
       <section class="system-summary" aria-labelledby="system-summary-title">
@@ -363,6 +423,28 @@
         <div class="dialog-actions">
           <button class="button button-quiet dialog-close" type="button">Cancel</button>
           <button class="button button-primary" type="submit">Import bundle</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="memory-standing-dialog" class="dialog dialog-wide">
+      <form id="memory-standing-form" method="dialog">
+        <div class="dialog-header">
+          <h2 id="memory-standing-dialog-title">Edit standing memory</h2>
+          <button class="icon-button dialog-close" type="button" aria-label="Close">×</button>
+        </div>
+        <p id="memory-standing-intro" class="dialog-intro">
+          The whole standing document is replaced. It is written only when it still
+          matches the version this page read, so a change made meanwhile is never
+          overwritten.
+        </p>
+        <label for="memory-standing-content">
+          <span class="field-label">Standing memory</span>
+          <textarea id="memory-standing-content" rows="12" required></textarea>
+        </label>
+        <div class="dialog-actions">
+          <button class="button button-quiet dialog-close" type="button">Cancel</button>
+          <button id="memory-standing-submit" class="button button-primary" type="submit">Save standing memory</button>
         </div>
       </form>
     </dialog>
