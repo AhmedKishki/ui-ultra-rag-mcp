@@ -491,6 +491,39 @@ def test_version_label_is_served_and_rendered(tmp_path: Path) -> None:
     assert "version_label" in script.text
 
 
+def test_a_memory_only_adapter_hides_the_document_workspace(tmp_path: Path) -> None:
+    source = tmp_path / "evidence.pdf"
+    adapter = FakeAdapter(source)
+    app = create_ui_app(
+        profile=_profile(
+            documents=False,
+            sources=False,
+            ingestion=False,
+            metadata=False,
+            source_inclusion=False,
+            source_files=False,
+            metadata_filters=False,
+            reranking=False,
+            memory=True,
+        ),
+        adapter=adapter,
+    )
+
+    with TestClient(app) as client:
+        payload = client.get("/api/ui").json()
+        page = client.get("/")
+        search = client.post("/api/search", json={"query": "evidence"})
+        sources = client.get("/api/sources")
+        memory = client.get("/api/memory")
+
+    assert payload["capabilities"]["documents"] is False
+    assert 'data-panel="search" data-capability="documents"' in page.text
+    assert 'data-view="memory" data-capability="memory"' in page.text
+    assert search.status_code == 404
+    assert sources.status_code == 404
+    assert memory.status_code == 200
+
+
 def test_memory_view_is_capability_gated_and_forwarded(tmp_path: Path) -> None:
     source = tmp_path / "evidence.pdf"
     source.write_bytes(b"%PDF-1.4\n% test\n")

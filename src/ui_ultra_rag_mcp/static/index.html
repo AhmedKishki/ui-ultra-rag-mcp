@@ -44,7 +44,7 @@
 
     <main id="workspace" class="workspace">
       <nav id="section-tabs" class="section-tabs" aria-label="Knowledge base views">
-        <button class="tab-button is-active" type="button" data-view="search" aria-selected="true">
+        <button class="tab-button is-active" type="button" data-view="search" data-capability="documents" aria-selected="true">
           Search
         </button>
         <button class="tab-button" type="button" data-view="sources" data-capability="sources" aria-selected="false">
@@ -55,7 +55,7 @@
         </button>
       </nav>
 
-      <section id="search-view" class="view-panel is-active" data-panel="search">
+      <section id="search-view" class="view-panel is-active" data-panel="search" data-capability="documents">
         <form id="search-form" class="search-console">
           <label class="query-field" for="query">
             <span class="field-label">Query</span>
@@ -243,7 +243,7 @@
         </form>
       </section>
 
-      <section class="system-summary" aria-labelledby="system-summary-title">
+      <section class="system-summary" data-capability="documents" aria-labelledby="system-summary-title">
         <h2 id="system-summary-title">Knowledge base status</h2>
 
         <div id="status-cards" class="status-grid" aria-live="polite">

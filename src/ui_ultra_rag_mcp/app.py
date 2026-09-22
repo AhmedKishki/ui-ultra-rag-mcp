@@ -32,6 +32,7 @@ MAX_ERROR_LENGTH = 1200
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 _OPERATION_CAPABILITY = {
+    "search": "documents",
     "list_sources": "sources",
     "get_passage": "passage_context",
     "ingest": "ingestion",

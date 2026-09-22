@@ -70,6 +70,16 @@ class UIAdapter(Protocol):
 | `export_bundle` | Export a server-defined portable project bundle |
 | `import_bundle` | Validate and import a named project-local bundle |
 
+### A server that serves no documents
+
+`documents` defaults to `True`. An adapter that serves something other than a
+corpus — memory, for instance — sets it to `False`, and the shared host then hides
+the document workspace: the Search view, the knowledge-base status, and the
+document routes, so `search` answers a 404 instead of forwarding a question the
+adapter cannot answer. The adapter still answers `status` and `health`, which
+carry the project identity the header shows, and any view it does enable becomes
+the visible one.
+
 ### Optional memory view
 
 A server whose project keeps memory — a standing document plus dated rounds, or

@@ -40,6 +40,11 @@ function applyProfile(profile) {
   document.querySelectorAll("[data-capability]").forEach((element) => {
     element.hidden = !hasCapability(element.dataset.capability);
   });
+  const visibleTabs = [...document.querySelectorAll(".tab-button")].filter(
+    (tab) => !tab.hidden,
+  );
+  const activeTab = visibleTabs.find((tab) => tab.classList.contains("is-active"));
+  if (!activeTab && visibleTabs.length) switchView(visibleTabs[0].dataset.view);
 }
 
 function node(tag, className, text) {

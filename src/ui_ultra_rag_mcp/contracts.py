@@ -11,8 +11,14 @@ from typing import Any, Protocol, TypeAlias
 
 @dataclass(frozen=True, slots=True)
 class UICapabilities:
-    """Optional actions supported by one adapter, document and memory alike."""
+    """Optional actions supported by one adapter, document and memory alike.
 
+    ``documents`` stays on for an adapter that serves a corpus and turns off for
+    one that serves something else — a memory-only server shows its own views
+    instead of a search console it cannot answer.
+    """
+
+    documents: bool = True
     sources: bool = True
     passage_context: bool = True
     ingestion: bool = True
