@@ -67,6 +67,7 @@ class UIProfile:
     memory_label: str = "Memory"
     memory_standing_label: str = "Standing memory"
     memory_rounds_label: str = "Recorded rounds"
+    memory_add_label: str = "Add a round"
     memory_note: str = ""
     capabilities: UICapabilities = UICapabilities()
     version_label: str = ""

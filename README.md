@@ -72,29 +72,19 @@ class UIAdapter(Protocol):
 
 ### A server that serves no documents
 
-`documents` defaults to `True`. An adapter that serves something other than a
-corpus — memory, for instance — sets it to `False`, and the shared host then hides
-the document workspace: the Search view, the knowledge-base status, and the
-document routes, so `search` answers a 404 instead of forwarding a question the
-adapter cannot answer. The adapter still answers `status` and `health`, which
-carry the project identity the header shows, and any view it does enable becomes
-the visible one.
+`documents` defaults to `True`. An adapter that serves something other than a corpus — memory, for instance — sets it to `False`, and the shared host then hides the document workspace: the Search view, the knowledge-base status, and the document routes, so `search` answers a 404 instead of forwarding a question the adapter cannot answer. The adapter still answers `status` and `health`, which carry the project identity the header shows, and any view it does enable becomes the visible one.
 
 ### Optional memory view
 
-A server whose project keeps memory — a standing document plus dated rounds, or
-anything with that shape — can add a **Memory** view instead of a second
-application. Two capability flags are opt-in and default to `False`:
+A server whose project keeps memory — a standing document plus dated rounds, or anything with that shape — can add a **Memory** view instead of a second application. Two capability flags are opt-in and default to `False`:
 
 | Capability | What the UI adds | Operations it enables |
 |---|---|---|
-| `memory` | A **Memory** view with a scope selector, the standing document, and the recorded rounds | `memory_status`, `memory_rounds`, `memory_standing` |
-| `memory_writes` | An **Add a round** form and an **Edit standing memory** dialog | `memory_append`, `memory_standing_save` |
+| `memory` | A **Memory** view showing every scope at once: one block per scope with its standing document and its recorded rounds | `memory_status`, `memory_rounds`, `memory_standing` |
+| `memory_writes` | An **Add a round** form inside each scope block and an **Edit standing memory** dialog | `memory_append`, `memory_standing_save` |
 
 Both flags off means no tab, no route, and a 404 for every memory request. A
-**scope** is an opaque identifier the adapter supplies — the UI never invents one,
-never interprets one, and never resolves a memory path itself. The adapter's
-`memory_status` decides which scopes exist and what they are called:
+**scope** is an opaque identifier the adapter supplies — the UI never invents one, never interprets one, and never resolves a memory path itself. The adapter's `memory_status` decides which scopes exist and what they are called:
 
 ```json
 {
@@ -111,8 +101,7 @@ never interprets one, and never resolves a memory path itself. The adapter's
 }
 ```
 
-`memory_rounds` takes `scope` and `limit` (1–200) and answers with the newest
-rounds first:
+`memory_rounds` takes `scope` and `limit` (1–200) and answers with the newest rounds first:
 
 ```json
 {
@@ -131,23 +120,17 @@ rounds first:
 }
 ```
 
-`memory_standing` returns the whole standing document with the digest of the
-bytes it read:
+`memory_standing` returns the whole standing document with the digest of the bytes it read:
 
 ```json
 { "scope": "local", "content": "# MEMORY\n…", "sha256": "…" }
 ```
 
-`memory_append` takes `scope`, `user_message`, and `assistant_message`; the
-adapter writes the round in its own format and returns `{"status": "saved", …}`.
-`memory_standing_save` takes `scope`, `content`, and the optional
-`expected_sha256` the page read, and the adapter decides whether to write: the UI
-only forwards the digest it displayed, so a document changed meanwhile can be
-refused rather than overwritten. Both writes are same-origin JSON, validated here,
-and refused with a 404 when `memory_writes` is off.
+`memory_append` takes `scope`, `user_message`, and `assistant_message`; the adapter writes the round in its own format and returns `{"status": "saved", …}`. `memory_standing_save` takes `scope`, `content`, and the optional `expected_sha256` the page read, and the adapter decides whether to write: the UI only forwards the digest it displayed, so a document changed meanwhile can be refused rather than overwritten. Both writes are same-origin JSON, validated here, and refused with a 404 when `memory_writes` is off.
 
-The adapter owns every memory decision: which scopes exist, what they are called,
-where they live, what a round is, and whether a standing write is allowed.
+The adapter owns every memory decision: which scopes exist, what they are called, where they live, what a round is, and whether a standing write is allowed.
+
+Every scope the status reports is shown at once, local and global together, each as a block with its own standing document, rounds, filter, and write form. At most ten are rendered and a note names how many were left out. The view holds no scope of its own: it sends back only the identifiers the status gave it.
 
 Bundle controls are disabled by default. A consuming server enables `bundle_export` and/or `bundle_import` in `UICapabilities` only when its adapter implements those operations. The shared UI never reads an archive itself. Servers that distinguish an ordinary re-ingestion from a forced rebuild can also enable `force_recompute`; the UI then sends that flag only for its **Regenerate** action.
 

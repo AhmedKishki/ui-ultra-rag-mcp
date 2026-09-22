@@ -931,26 +931,37 @@ h3 {
   margin: 0 0 0.75rem;
 }
 
-.memory-toolbar select {
-  min-width: 14rem;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid var(--border-dark);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  font-size: 0.875rem;
+.memory-scopes {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 1rem;
 }
 
-.memory-standing {
-  margin-top: 1rem;
+.memory-scope {
   padding: 1rem;
   border: 1px solid var(--border);
   background: var(--surface);
 }
 
+.memory-scope-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.memory-scope-title {
+  font-size: 1rem;
+}
+
+.memory-subheading {
+  margin: 1.25rem 0 0;
+  font-size: 0.9375rem;
+}
+
 .standing-document {
   max-height: 22rem;
-  margin: 0.75rem 0 0;
+  margin: 0.5rem 0 0;
   padding: 0.75rem;
   overflow: auto;
   border: 1px solid var(--border);
@@ -962,8 +973,21 @@ h3 {
   overflow-wrap: anywhere;
 }
 
-.memory-rounds-section {
-  margin-top: 1.75rem;
+.memory-rounds {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.memory-round-filter {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border-dark);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
 }
 
 .memory-round {
@@ -997,13 +1021,17 @@ h3 {
 .memory-append {
   display: grid;
   gap: 0.75rem;
-  margin-top: 1.75rem;
-  padding: 1rem;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
 }
 
-.memory-append textarea {
+.memory-append-field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.memory-append-input {
   width: 100%;
   padding: 0.5rem;
   border: 1px solid var(--border-dark);

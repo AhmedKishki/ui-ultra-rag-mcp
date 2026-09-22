@@ -675,6 +675,7 @@ def test_memory_labels_are_served_and_rendered(tmp_path: Path) -> None:
         memory_label="Agent memory",
         memory_standing_label="What is always remembered",
         memory_rounds_label="Dialogue rounds",
+        memory_add_label="Record a round",
         memory_note="Memory stays on this machine.",
         capabilities=UICapabilities(memory=True, memory_writes=True),
     )
@@ -690,8 +691,17 @@ def test_memory_labels_are_served_and_rendered(tmp_path: Path) -> None:
     assert payload["memory_note"] == "Memory stays on this machine."
     assert payload["capabilities"]["memory"] is True
     assert payload["capabilities"]["memory_writes"] is True
-    assert 'id="memory-scope"' in page.text
-    assert "memory_standing_label" in script.text
+    assert 'id="memory-scopes"' in page.text
+    assert 'data-panel="memory"' in page.text
+    for label in (
+        "memory_standing_label",
+        "memory_rounds_label",
+        "memory_add_label",
+    ):
+        assert label in script.text
+    # Every scope the status reports is rendered, so the view asks for each one.
+    assert "memoryScopeCard" in script.text
+    assert "/api/memory/rounds?scope=" in script.text
 
 
 def test_package_version_matches_pyproject() -> None:
