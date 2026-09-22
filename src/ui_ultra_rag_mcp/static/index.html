@@ -69,7 +69,7 @@
           </label>
 
           <div class="search-controls">
-            <fieldset class="method-control">
+            <fieldset class="method-control" data-capability="retrieval_modes">
               <legend>Retrieval</legend>
               <label><input type="radio" name="retrieval_method" value="hybrid" checked><span>Hybrid</span></label>
               <label><input type="radio" name="retrieval_method" value="bm25"><span>BM25</span></label>
@@ -258,7 +258,7 @@
           Included documents will be extracted and indexed. The current generation
           remains active unless the complete build succeeds.
         </p>
-        <div class="two-column-fields">
+        <div class="two-column-fields" data-capability="chunk_settings">
           <label for="chunk-size">
             <span class="field-label">Chunk size</span>
             <input id="chunk-size" type="number" min="50" max="384" value="384" required>

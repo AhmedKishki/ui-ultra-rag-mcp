@@ -813,16 +813,21 @@ async function search(event) {
   const payload = {
     query,
     top_k: Number(byId("top-k").value),
+  };
+  const optional = {
     categories: hasCapability("metadata_filters") ? listValue(byId("category-filter").value) : null,
     categories_any: hasCapability("category_partitions") ? listValue(byId("category-any-filter").value) : null,
     projects_any: hasCapability("project_metadata") ? listValue(byId("project-any-filter").value) : null,
     keywords: hasCapability("metadata_filters") ? listValue(byId("keyword-filter").value) : null,
-    document_ids: null,
     source_ids: hasCapability("source_selection") ? listValue(byId("include-source-filter").value) : null,
     exclude_source_ids: hasCapability("source_selection") ? listValue(byId("exclude-source-filter").value) : null,
-    retrieval_method: method,
-    rerank: hasCapability("reranking") && byId("rerank").checked,
   };
+  // Send a filter only when the server supports it and the user selected one.
+  for (const [field, value] of Object.entries(optional)) {
+    if (value?.length) payload[field] = value;
+  }
+  if (hasCapability("retrieval_modes")) payload.retrieval_method = method;
+  if (hasCapability("reranking")) payload.rerank = byId("rerank").checked;
   setBusy(true, payload.rerank ? "Searching and CPU reranking…" : "Searching evidence…");
   try {
     state.hits = new Map();
@@ -973,13 +978,17 @@ async function ingest(event) {
   event.preventDefault();
   const chunkSize = Number(byId("chunk-size").value);
   const chunkOverlap = Number(byId("chunk-overlap").value);
-  if (chunkOverlap >= chunkSize) {
+  if (hasCapability("chunk_settings") && chunkOverlap >= chunkSize) {
     toast("Chunk overlap must be smaller than chunk size.", true);
     return;
   }
   setBusy(true, state.profile?.ingest_busy_message || "Building the indexes. This can take several minutes…");
   try {
-    const request = { chunk_size: chunkSize, chunk_overlap: chunkOverlap };
+    const request = {};
+    if (hasCapability("chunk_settings")) {
+      request.chunk_size = chunkSize;
+      request.chunk_overlap = chunkOverlap;
+    }
     if (hasCapability("force_recompute")) request.force_recompute = state.forceRecompute;
     const result = await api("/api/ingest", {
       method: "POST",

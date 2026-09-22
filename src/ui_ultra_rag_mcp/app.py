@@ -228,6 +228,8 @@ async def _search(request: Request) -> Response:
         raise HTTPException(status_code=400, detail="Source selection is not available")
     if body.get("rerank") and not capabilities.reranking:
         raise HTTPException(status_code=400, detail="Reranking is not available")
+    if body.get("retrieval_method") and not capabilities.retrieval_modes:
+        raise HTTPException(status_code=400, detail="Retrieval modes are not available")
     return JSONResponse(await _adapter_call(request, "search", body))
 
 
@@ -253,8 +255,11 @@ async def _passage(request: Request) -> Response:
 
 async def _ingest(request: Request) -> Response:
     body = await _json_body(request)
-    allowed = {"chunk_size", "chunk_overlap"}
-    if request.app.state.profile.capabilities.force_recompute:
+    capabilities = request.app.state.profile.capabilities
+    allowed: set[str] = set()
+    if capabilities.chunk_settings:
+        allowed |= {"chunk_size", "chunk_overlap"}
+    if capabilities.force_recompute:
         allowed.add("force_recompute")
     unknown = set(body) - allowed
     if unknown:

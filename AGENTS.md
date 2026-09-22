@@ -25,7 +25,7 @@ This repository owns reusable local UI infrastructure for UltraRAG-derived MCP s
 - `create_ui_app` builds the Starlette application.
 - `run_ui` starts Uvicorn on a loopback address.
 
-Changing operation names, payloads, capability names, or public routes is an API change. Preserve compatibility or release a new major version.
+Changing operation names, payloads, capability names, or public routes is an API change. Preserve compatibility or release a new major version. New capability flags default to `True` so they stay inert for a pinned adapter.
 
 ## Validation
 

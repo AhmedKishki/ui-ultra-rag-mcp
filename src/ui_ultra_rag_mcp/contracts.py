@@ -29,7 +29,9 @@ class UICapabilities:
     project_metadata: bool = False
     source_selection: bool = False
     category_partitions: bool = False
+    retrieval_modes: bool = True
     reranking: bool = True
+    chunk_settings: bool = True
     force_recompute: bool = False
     bundle_export: bool = False
     bundle_import: bool = False

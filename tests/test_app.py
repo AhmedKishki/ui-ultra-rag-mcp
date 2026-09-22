@@ -359,7 +359,9 @@ def test_disabled_capabilities_are_reported_and_enforced(tmp_path: Path) -> None
         source_selection=False,
         category_partitions=False,
         project_metadata=False,
+        retrieval_modes=False,
         reranking=False,
+        chunk_settings=False,
     )
     app = create_ui_app(profile=profile, adapter=FakeAdapter(source))
 
@@ -367,9 +369,17 @@ def test_disabled_capabilities_are_reported_and_enforced(tmp_path: Path) -> None
         ui = client.get("/api/ui")
         sources = client.get("/api/sources")
         ingest = client.post("/api/ingest", json={})
+        chunked_ingest = client.post(
+            "/api/ingest",
+            json={"chunk_size": 384, "chunk_overlap": 64},
+        )
         rerank = client.post(
             "/api/search",
             json={"query": "evidence", "rerank": True},
+        )
+        mode = client.post(
+            "/api/search",
+            json={"query": "evidence", "retrieval_method": "bm25"},
         )
         partitions = client.post(
             "/api/search",
@@ -391,9 +401,13 @@ def test_disabled_capabilities_are_reported_and_enforced(tmp_path: Path) -> None
         )
 
     assert ui.json()["capabilities"]["sources"] is False
+    assert ui.json()["capabilities"]["retrieval_modes"] is False
+    assert ui.json()["capabilities"]["chunk_settings"] is False
     assert sources.status_code == 404
     assert ingest.status_code == 404
+    assert chunked_ingest.status_code == 400
     assert rerank.status_code == 400
+    assert mode.status_code == 400
     assert partitions.status_code == 400
     assert selection.status_code == 400
     assert project_filter.status_code == 400
@@ -522,6 +536,42 @@ def test_a_memory_only_adapter_hides_the_document_workspace(tmp_path: Path) -> N
     assert search.status_code == 404
     assert sources.status_code == 404
     assert memory.status_code == 200
+
+
+def test_static_assets_declare_every_capability_gated_control(tmp_path: Path) -> None:
+    """A control the profile hides must be declared in the markup, not left inert."""
+
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    app = create_ui_app(profile=_profile(), adapter=FakeAdapter(source))
+
+    with TestClient(app) as client:
+        page = client.get("/")
+        javascript = client.get("/assets/app.js")
+
+    assert page.status_code == 200
+    assert javascript.status_code == 200
+    for capability in (
+        "bundle_export",
+        "bundle_import",
+        "category_partitions",
+        "chunk_settings",
+        "documents",
+        "ingestion",
+        "memory",
+        "metadata_filters",
+        "project_metadata",
+        "reranking",
+        "retrieval_modes",
+        "source_selection",
+        "sources",
+    ):
+        assert f'data-capability="{capability}"' in page.text
+    # The search and ingestion payloads send a capability-gated field only when
+    # that capability is on, so a hidden control never travels as a value.
+    assert 'hasCapability("retrieval_modes")' in javascript.text
+    assert 'hasCapability("chunk_settings")' in javascript.text
+    assert 'hasCapability("reranking")' in javascript.text
 
 
 def test_memory_view_is_capability_gated_and_forwarded(tmp_path: Path) -> None:

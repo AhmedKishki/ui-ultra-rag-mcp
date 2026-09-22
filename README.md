@@ -12,7 +12,7 @@ The `mcp` in the name identifies the interface it is designed to consume; it doe
 
 - a basic search-and-sources workspace with no frontend build step;
 - status, search, passage context, source listing, and ingestion views;
-- optional metadata editing, source exclusion, source-file access, filters, reranking, and portable-bundle controls;
+- optional metadata editing, source exclusion, source-file access, filters, retrieval modes, reranking, chunk settings, and portable-bundle controls;
 - optional per-query source selection, category-partition, and project-tag filters for servers that support them;
 - an optional memory view for servers that expose memory scopes, with opt-in writes;
 - capability flags so an adapter can hide unsupported actions;
@@ -134,7 +134,17 @@ Every scope the status reports is shown at once, local and global together, each
 
 Bundle controls are disabled by default. A consuming server enables `bundle_export` and/or `bundle_import` in `UICapabilities` only when its adapter implements those operations. The shared UI never reads an archive itself. Servers that distinguish an ordinary re-ingestion from a forced rebuild can also enable `force_recompute`; the UI then sends that flag only for its **Regenerate** action.
 
-Two further capability flags are opt-in and cover filters a server may not implement:
+Three capability flags default to `True` and hide a control the server cannot honour, so a profile turns them off when its own tool surface offers no choice there:
+
+| Capability | What the UI adds | Fields it sends |
+|---|---|---|
+| `retrieval_modes` | The **Retrieval** method radios (hybrid, BM25, dense) | `retrieval_method` |
+| `reranking` | The **CPU rerank** checkbox | `rerank` |
+| `chunk_settings` | The **Chunk size** and **Overlap** fields in the ingestion dialog | `chunk_size`, `chunk_overlap` |
+
+A field from one of those three travels only when its capability is on, and the matching route rejects it with a 400 when the capability is off.
+
+Three further capability flags are opt-in and cover filters a server may not implement:
 
 | Capability | What the UI adds | Search fields it sends |
 |---|---|---|
