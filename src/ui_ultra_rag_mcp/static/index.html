@@ -137,6 +137,22 @@
             </div>
           </details>
 
+          <details class="filter-drawer" data-capability="bibliographic_filters">
+            <summary>Limit by author or work</summary>
+            <div class="filter-fields">
+              <label for="author-filter">
+                <span class="field-label">Any of these authors</span>
+                <input id="author-filter" type="text" placeholder="Crawford, Gidwani">
+                <small>Comma separated; at least one name must appear in the source's authors. A surname is enough.</small>
+              </label>
+              <label for="title-filter">
+                <span class="field-label">Any of these titles</span>
+                <input id="title-filter" type="text" placeholder="Atlas of AI, Waste Frontiers">
+                <small>Comma separated; at least one phrase must appear in the source's title. A remembered fragment is enough.</small>
+              </label>
+            </div>
+          </details>
+
           <details class="filter-drawer" data-capability="source_selection">
             <summary>Limit to named sources</summary>
             <div class="filter-fields">
@@ -244,9 +260,7 @@
       </section>
     </main>
 
-    <footer id="footer-text" class="site-footer">
-      Verify important quotations in the original PDF or EPUB.
-    </footer>
+    <footer id="footer-text" class="site-footer" hidden></footer>
 
     <dialog id="ingest-dialog" class="dialog">
       <form id="ingest-form" method="dialog">

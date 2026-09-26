@@ -26,7 +26,11 @@ function applyProfile(profile) {
   byId("project-label").textContent = profile.project_label;
   byId("section-tabs").setAttribute("aria-label", profile.navigation_label);
   byId("ingest-intro").textContent = profile.ingest_intro;
-  byId("footer-text").textContent = profile.footer_text;
+  // An empty footer removes the element rather than leaving an empty band: the
+  // quotation rule belongs in the documentation, not in every view.
+  const footer = byId("footer-text");
+  footer.textContent = profile.footer_text || "";
+  footer.hidden = !profile.footer_text;
   byId("bundle-import-intro").textContent = profile.bundle_import_intro;
   byId("memory-tab-label").textContent = profile.memory_label;
   byId("memory-heading").textContent = profile.memory_label;
@@ -819,6 +823,8 @@ async function search(event) {
     categories_any: hasCapability("category_partitions") ? listValue(byId("category-any-filter").value) : null,
     projects_any: hasCapability("project_metadata") ? listValue(byId("project-any-filter").value) : null,
     keywords: hasCapability("metadata_filters") ? listValue(byId("keyword-filter").value) : null,
+    authors_any: hasCapability("bibliographic_filters") ? listValue(byId("author-filter").value) : null,
+    titles_any: hasCapability("bibliographic_filters") ? listValue(byId("title-filter").value) : null,
     source_ids: hasCapability("source_selection") ? listValue(byId("include-source-filter").value) : null,
     exclude_source_ids: hasCapability("source_selection") ? listValue(byId("exclude-source-filter").value) : null,
   };

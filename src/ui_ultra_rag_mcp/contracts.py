@@ -26,6 +26,7 @@ class UICapabilities:
     source_inclusion: bool = True
     source_files: bool = True
     metadata_filters: bool = True
+    bibliographic_filters: bool = False
     project_metadata: bool = False
     source_selection: bool = False
     category_partitions: bool = False
@@ -56,7 +57,7 @@ class UIProfile:
         "remains active unless the complete build succeeds."
     )
     ingest_busy_message: str = "Building the indexes. This can take several minutes…"
-    footer_text: str = "Verify important quotations in the original source."
+    footer_text: str = ""
     result_text_label: str = "Retrieved passage"
     copy_text_label: str = "Copy passage"
     bundle_import_intro: str = (

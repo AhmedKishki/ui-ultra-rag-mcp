@@ -393,6 +393,14 @@ def test_disabled_capabilities_are_reported_and_enforced(tmp_path: Path) -> None
             "/api/search",
             json={"query": "evidence", "projects_any": ["ai-and-fetishism"]},
         )
+        authors = client.post(
+            "/api/search",
+            json={"query": "evidence", "authors_any": ["Crawford"]},
+        )
+        titles = client.post(
+            "/api/search",
+            json={"query": "evidence", "titles_any": ["Atlas of AI"]},
+        )
         source_file = client.get("/api/source-file?path=evidence.pdf")
         export = client.post("/api/bundles/export", json={})
         bundle_import = client.post(
@@ -403,6 +411,7 @@ def test_disabled_capabilities_are_reported_and_enforced(tmp_path: Path) -> None
     assert ui.json()["capabilities"]["sources"] is False
     assert ui.json()["capabilities"]["retrieval_modes"] is False
     assert ui.json()["capabilities"]["chunk_settings"] is False
+    assert ui.json()["capabilities"]["bibliographic_filters"] is False
     assert sources.status_code == 404
     assert ingest.status_code == 404
     assert chunked_ingest.status_code == 400
@@ -411,6 +420,8 @@ def test_disabled_capabilities_are_reported_and_enforced(tmp_path: Path) -> None
     assert partitions.status_code == 400
     assert selection.status_code == 400
     assert project_filter.status_code == 400
+    assert authors.status_code == 400
+    assert titles.status_code == 400
     assert source_file.status_code == 404
     assert export.status_code == 404
     assert bundle_import.status_code == 404
@@ -538,7 +549,58 @@ def test_a_memory_only_adapter_hides_the_document_workspace(tmp_path: Path) -> N
     assert memory.status_code == 200
 
 
-def test_static_assets_declare_every_capability_gated_control(tmp_path: Path) -> None:
+def test_bibliographic_filters_are_capability_gated_and_forwarded(
+    tmp_path: Path,
+) -> None:
+    """An author or title filter travels only where the server implements it."""
+
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    adapter = FakeAdapter(source)
+    app = create_ui_app(profile=_profile(bibliographic_filters=True), adapter=adapter)
+
+    with TestClient(app) as client:
+        search = client.post(
+            "/api/search",
+            json={
+                "query": "evidence",
+                "top_k": 4,
+                "authors_any": ["Crawford", "Gidwani"],
+                "titles_any": ["Atlas of AI"],
+            },
+        )
+
+    assert search.status_code == 200
+    forwarded = next(
+        arguments for operation, arguments in adapter.calls if operation == "search"
+    )
+    assert forwarded["authors_any"] == ["Crawford", "Gidwani"]
+    assert forwarded["titles_any"] == ["Atlas of AI"]
+
+
+def test_the_quotation_rule_is_not_a_footer(tmp_path: Path) -> None:
+    """The shared UI states no quotation rule of its own.
+
+    A rule that matters on every passage belongs in the documentation and in the
+    tool descriptions that an agent reads, not in the corner of every view.
+    """
+
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    app = create_ui_app(profile=_profile(), adapter=FakeAdapter(source))
+
+    with TestClient(app) as client:
+        profile = client.get("/api/ui")
+        page = client.get("/")
+        javascript = client.get("/assets/app.js")
+
+    assert profile.json()["footer_text"] == ""
+    assert "not for direct quotation" not in page.text.lower()
+    assert "Verify important quotations" not in page.text
+    # The footer is emptied and hidden rather than left as an empty band, so a
+    # profile that sets no footer shows none.
+    assert "footer.hidden = !profile.footer_text" in javascript.text
+
     """A control the profile hides must be declared in the markup, not left inert."""
 
     source = tmp_path / "evidence.pdf"
@@ -552,6 +614,7 @@ def test_static_assets_declare_every_capability_gated_control(tmp_path: Path) ->
     assert page.status_code == 200
     assert javascript.status_code == 200
     for capability in (
+        "bibliographic_filters",
         "bundle_export",
         "bundle_import",
         "category_partitions",
@@ -572,6 +635,7 @@ def test_static_assets_declare_every_capability_gated_control(tmp_path: Path) ->
     assert 'hasCapability("retrieval_modes")' in javascript.text
     assert 'hasCapability("chunk_settings")' in javascript.text
     assert 'hasCapability("reranking")' in javascript.text
+    assert 'hasCapability("bibliographic_filters")' in javascript.text
 
 
 def test_memory_view_is_capability_gated_and_forwarded(tmp_path: Path) -> None:

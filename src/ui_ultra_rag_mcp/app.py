@@ -196,6 +196,8 @@ async def _search(request: Request) -> Response:
         "projects",
         "projects_any",
         "keywords",
+        "authors_any",
+        "titles_any",
         "document_ids",
         "source_ids",
         "exclude_source_ids",
@@ -226,6 +228,13 @@ async def _search(request: Request) -> Response:
         body.get("source_ids") or body.get("exclude_source_ids")
     ):
         raise HTTPException(status_code=400, detail="Source selection is not available")
+    if not capabilities.bibliographic_filters and (
+        body.get("authors_any") or body.get("titles_any")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Author and title filters are not available",
+        )
     if body.get("rerank") and not capabilities.reranking:
         raise HTTPException(status_code=400, detail="Reranking is not available")
     if body.get("retrieval_method") and not capabilities.retrieval_modes:
