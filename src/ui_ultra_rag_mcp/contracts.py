@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -38,6 +38,10 @@ class UICapabilities:
     bundle_import: bool = False
     memory: bool = False
     memory_writes: bool = False
+    # Whether this adapter can list and end the MCP clients attached to the
+    # process serving it. Off by default: a library cannot know whether the host
+    # is a server at all, and a memory-only server has no corpus clients.
+    clients: bool = False
 
     def as_dict(self) -> dict[str, bool]:
         return asdict(self)
@@ -118,6 +122,22 @@ class UIAdapter(Protocol):
     ) -> Mapping[str, Any]: ...
 
     async def source_file(self, source_path: str) -> SourceFile: ...
+
+
+class ClientControl(Protocol):
+    """The attached MCP clients of the process serving this workspace.
+
+    Separate from `UIAdapter` because a host may serve a workspace and still not
+    be a server: a stdio-only process has no other client to report. A route that
+    needs this checks for it at run time rather than making every adapter carry
+    two methods it cannot answer.
+    """
+
+    async def list_clients(self) -> Sequence[Mapping[str, Any]]: ...
+
+    async def disconnect_client(
+        self, session_id: str, reason: str | None = None
+    ) -> Mapping[str, Any]: ...
 
 
 AdapterContext: TypeAlias = AbstractAsyncContextManager[UIAdapter]

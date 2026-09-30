@@ -327,6 +327,48 @@ async def _import_bundle(request: Request) -> Response:
     return JSONResponse(await _adapter_call(request, "import_bundle", body))
 
 
+def _client_control(request: Request) -> Any:
+    """The adapter's client control, or a refusal when it has none.
+
+    Checked at run time rather than by capability alone, because a host may
+    advertise the capability and still not expose the methods; a 501 names that
+    rather than raising inside the route.
+    """
+
+    adapter: Any = request.app.state.adapter
+    for method in ("list_clients", "disconnect_client"):
+        if not callable(getattr(adapter, method, None)):
+            raise HTTPException(
+                status_code=501, detail="This host cannot report its clients."
+            )
+    return adapter
+
+
+async def _clients(request: Request) -> Response:
+    """The MCP clients attached to the process serving this workspace."""
+
+    adapter = _client_control(request)
+    _require_capability(request, "clients")
+    return JSONResponse({"clients": list(await adapter.list_clients())})
+
+
+async def _disconnect(request: Request) -> Response:
+    """End one attached session, which is the only way a client is stopped here."""
+
+    adapter = _client_control(request)
+    _require_capability(request, "clients")
+    session_id = request.path_params["session_id"]
+    body = await _json_body(request)
+    reason = body.get("reason")
+    if reason is not None and not isinstance(reason, str):
+        raise HTTPException(status_code=400, detail="A reason must be a string.")
+    return JSONResponse(
+        await adapter.disconnect_client(
+            session_id, reason or "Disconnected by request."
+        )
+    )
+
+
 async def _source_file(request: Request) -> Response:
     _require_capability(request, "source_files")
     raw_path = request.query_params.get("path", "").strip()
@@ -499,6 +541,10 @@ def create_ui_app(
         Route("/api/source-inclusion", _set_inclusion, methods=["POST"]),
         Route("/api/bundles/export", _export_bundle, methods=["POST"]),
         Route("/api/bundles/import", _import_bundle, methods=["POST"]),
+        Route("/api/clients", _clients),
+        Route(
+            "/api/clients/{session_id:str}/disconnect", _disconnect, methods=["POST"]
+        ),
         Route("/api/source-file", _source_file),
         Route("/api/memory", _memory_status),
         Route("/api/memory/rounds", _memory_rounds),

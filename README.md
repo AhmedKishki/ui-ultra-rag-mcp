@@ -82,8 +82,11 @@ A server whose project keeps memory — a standing document plus dated rounds, o
 |---|---|---|
 | `memory` | A **Memory** view showing every scope at once: one block per scope with its standing document and its recorded rounds | `memory_status`, `memory_rounds`, `memory_standing` |
 | `memory_writes` | An **Add a round** form inside each scope block and an **Edit standing memory** dialog | `memory_append`, `memory_standing_save` |
+| `clients` | An **Attached clients** panel on the status view, listing every MCP client connected to the host with a **Disconnect** action | `list_clients`, `disconnect_client` |
 
-Both flags off means no tab, no route, and a 404 for every memory request. A
+`clients` is about the host rather than the corpus. A host that serves this workspace and is not a server — a stdio-only process, or a library embedded in one — has no other client to report, so the flag defaults to off and the panel and both routes stay absent. A host that turns it on must implement `list_clients()` and `disconnect_client()` on its adapter; a host that advertises the flag without them is refused with a 501 rather than raising inside the route. `disconnect_client` ends one session, and the client owns its process, so the UI says so next to the action. The write is same-origin JSON, like every other write here.
+
+Both memory flags off means no tab, no route, and a 404 for every memory request. A
 **scope** is an opaque identifier the adapter supplies — the UI never invents one, never interprets one, and never resolves a memory path itself. The adapter's `memory_status` decides which scopes exist and what they are called:
 
 ```json

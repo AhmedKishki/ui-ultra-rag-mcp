@@ -204,6 +204,65 @@ function configureRetrieval(status) {
   byId("search-button").disabled = !status.ready || state.busy;
 }
 
+function renderClients(clients) {
+  const container = byId("client-chips");
+  container.replaceChildren();
+  if (!clients.length) {
+    const empty = node("p", "form-note", "No agent is attached to this app.");
+    container.append(empty);
+    return;
+  }
+  for (const client of clients) {
+    const chip = node("div", "partition-chip");
+    const label = node("span", "partition-chip-label", client.name || client.session_id);
+    const detail = node(
+      "span",
+      "partition-chip-count",
+      client.attached
+        ? `${client.requests || 0} calls`
+        : client.detached_reason || "idle",
+    );
+    chip.append(label, detail);
+    if (client.attached) {
+      const drop = node("button", "text-button", "Disconnect");
+      drop.type = "button";
+      drop.addEventListener("click", () => disconnectClient(client.session_id));
+      chip.append(drop);
+    }
+    container.append(chip);
+  }
+}
+
+async function disconnectClient(sessionId) {
+  try {
+    setBusy(true, "Disconnecting the client…");
+    await api(`/api/clients/${encodeURIComponent(sessionId)}/disconnect`, {
+      method: "POST",
+      body: JSON.stringify({ reason: "Disconnected from the workspace." }),
+    });
+    toast("Client disconnected.");
+    await loadWorkspace();
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function loadClients() {
+  if (!hasCapability("clients")) return;
+  try {
+    const payload = await api("/api/clients");
+    renderClients(payload.clients || []);
+  } catch (error) {
+    // A host that advertises the capability and cannot answer is a workspace
+    // fact, not a failure to show the knowledge base, so the panel says so and
+    // the rest of the view carries on.
+    const container = byId("client-chips");
+    container.replaceChildren(node("p", "form-note", error.message));
+  }
+}
+
 function renderStatus(status) {
   state.status = status;
   const projectPath = status.project_root || "";
@@ -680,6 +739,7 @@ async function loadWorkspace({ announce = false } = {}) {
   setConnection("loading", "Connecting");
   try {
     if (!state.profile) applyProfile(await api("/api/ui"));
+    await loadClients();
     const [status, sources] = await Promise.all([
       api("/api/status"),
       hasCapability("sources")
