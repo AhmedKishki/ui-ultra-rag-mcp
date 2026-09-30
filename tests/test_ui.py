@@ -60,6 +60,8 @@ class ClientControlAdapter:
         self, session_id: str, reason: str | None = None
     ) -> Mapping[str, Any]:
         self.dropped.append((session_id, reason))
+        if session_id == "gone":
+            raise UIRequestError("No client is attached with session gone")
         return {"session_id": session_id, "attached": False, "reason": reason}
 
 
@@ -147,6 +149,19 @@ def test_a_host_that_advertises_clients_and_cannot_answer_says_501() -> None:
         response = client.get("/api/clients")
     assert response.status_code == 501
     assert "cannot report" in response.json()["error"]
+
+
+def test_a_host_refusal_keeps_its_own_status_and_reason() -> None:
+    """A host that refuses a client request has said something a reader can act on.
+
+    Translating it into a generic failure would throw the reason away, so the two
+    client routes carry the same translation the operation routes do.
+    """
+
+    with _host(ClientControlAdapter()) as client:
+        response = client.post("/api/clients/gone/disconnect", json={})
+    assert response.status_code == 400
+    assert "No client is attached" in response.json()["error"]
 
 
 def test_the_disconnect_reason_must_be_a_string() -> None:

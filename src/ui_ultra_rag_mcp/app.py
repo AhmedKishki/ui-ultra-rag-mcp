@@ -344,12 +344,30 @@ def _client_control(request: Request) -> Any:
     return adapter
 
 
+async def _call_client(adapter: Any, method: str, *args: Any) -> Any:
+    """One client call, with the adapter's own refusal kept intact.
+
+    A host refuses a client request for a reason a reader can act on — a session
+    that is already gone, or a workspace served without a process behind it — and
+    translating that into a generic failure would throw the reason away. The
+    translation `_adapter_call` applies is therefore applied here too.
+    """
+
+    try:
+        return await getattr(adapter, method)(*args)
+    except UIRequestError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=exc.detail[:MAX_ERROR_LENGTH],
+        ) from exc
+
+
 async def _clients(request: Request) -> Response:
     """The MCP clients attached to the process serving this workspace."""
 
     adapter = _client_control(request)
     _require_capability(request, "clients")
-    return JSONResponse({"clients": list(await adapter.list_clients())})
+    return JSONResponse({"clients": list(await _call_client(adapter, "list_clients"))})
 
 
 async def _disconnect(request: Request) -> Response:
