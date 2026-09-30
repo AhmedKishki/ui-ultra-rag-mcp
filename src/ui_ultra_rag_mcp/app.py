@@ -381,8 +381,11 @@ async def _disconnect(request: Request) -> Response:
     if reason is not None and not isinstance(reason, str):
         raise HTTPException(status_code=400, detail="A reason must be a string.")
     return JSONResponse(
-        await adapter.disconnect_client(
-            session_id, reason or "Disconnected by request."
+        await _call_client(
+            adapter,
+            "disconnect_client",
+            session_id,
+            reason or "Disconnected by request.",
         )
     )
 
