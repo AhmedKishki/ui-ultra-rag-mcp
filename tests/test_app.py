@@ -552,7 +552,7 @@ def test_a_memory_only_adapter_hides_the_document_workspace(tmp_path: Path) -> N
 def test_bibliographic_filters_are_capability_gated_and_forwarded(
     tmp_path: Path,
 ) -> None:
-    """An author or title filter travels only where the server implements it."""
+    """An author, title, or language filter travels only where the server implements it."""
 
     source = tmp_path / "evidence.pdf"
     source.write_bytes(b"%PDF-1.4\n% test\n")
@@ -567,6 +567,7 @@ def test_bibliographic_filters_are_capability_gated_and_forwarded(
                 "top_k": 4,
                 "authors_any": ["Crawford", "Gidwani"],
                 "titles_any": ["Atlas of AI"],
+                "languages_any": ["en", "de"],
             },
         )
 
@@ -576,6 +577,35 @@ def test_bibliographic_filters_are_capability_gated_and_forwarded(
     )
     assert forwarded["authors_any"] == ["Crawford", "Gidwani"]
     assert forwarded["titles_any"] == ["Atlas of AI"]
+    assert forwarded["languages_any"] == ["en", "de"]
+
+
+def test_a_language_filter_is_refused_where_the_capability_is_off(
+    tmp_path: Path,
+) -> None:
+    """Language is a bibliographic filter, so the same flag gates it.
+
+    A layer the app serves and the workspace accepted silently would narrow a
+    search the reader did not know was narrowed, which is the one failure this
+    gate exists to prevent.
+    """
+
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    adapter = FakeAdapter(source)
+    app = create_ui_app(profile=_profile(), adapter=adapter)
+
+    with TestClient(app) as client:
+        language = client.post(
+            "/api/search", json={"query": "evidence", "languages_any": ["en"]}
+        )
+        author = client.post(
+            "/api/search", json={"query": "evidence", "authors_any": ["Crawford"]}
+        )
+
+    assert language.status_code == 400
+    assert author.status_code == 400
+    assert not any(operation == "search" for operation, _ in adapter.calls)
 
 
 def test_the_quotation_rule_is_not_a_footer(tmp_path: Path) -> None:
@@ -636,6 +666,13 @@ def test_the_quotation_rule_is_not_a_footer(tmp_path: Path) -> None:
     assert 'hasCapability("chunk_settings")' in javascript.text
     assert 'hasCapability("reranking")' in javascript.text
     assert 'hasCapability("bibliographic_filters")' in javascript.text
+    # The language filter and the inventory that names the languages in a
+    # project are one capability: a box a reader cannot fill from the status
+    # beside it is a box that asks them to know the codes already listed.
+    assert 'id="language-filter"' in page.text
+    assert 'id="language-chips"' in page.text
+    assert 'byId("language-filter").value' in javascript.text
+    assert "renderLanguages(status)" in javascript.text
 
 
 def test_memory_view_is_capability_gated_and_forwarded(tmp_path: Path) -> None:

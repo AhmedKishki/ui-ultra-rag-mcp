@@ -198,6 +198,7 @@ async def _search(request: Request) -> Response:
         "keywords",
         "authors_any",
         "titles_any",
+        "languages_any",
         "document_ids",
         "source_ids",
         "exclude_source_ids",
@@ -229,11 +230,11 @@ async def _search(request: Request) -> Response:
     ):
         raise HTTPException(status_code=400, detail="Source selection is not available")
     if not capabilities.bibliographic_filters and (
-        body.get("authors_any") or body.get("titles_any")
+        body.get("authors_any") or body.get("titles_any") or body.get("languages_any")
     ):
         raise HTTPException(
             status_code=400,
-            detail="Author and title filters are not available",
+            detail="Author, title, and language filters are not available",
         )
     if body.get("rerank") and not capabilities.reranking:
         raise HTTPException(status_code=400, detail="Reranking is not available")

@@ -138,7 +138,7 @@
           </details>
 
           <details class="filter-drawer" data-capability="bibliographic_filters">
-            <summary>Limit by author or work</summary>
+            <summary>Limit by author, work, or language</summary>
             <div class="filter-fields">
               <label for="author-filter">
                 <span class="field-label">Any of these authors</span>
@@ -149,6 +149,11 @@
                 <span class="field-label">Any of these titles</span>
                 <input id="title-filter" type="text" placeholder="Atlas of AI, Waste Frontiers">
                 <small>Comma separated; at least one phrase must appear in the source's title. A remembered fragment is enough.</small>
+              </label>
+              <label for="language-filter">
+                <span class="field-label">Any of these languages</span>
+                <input id="language-filter" type="text" placeholder="en, de">
+                <small>Comma separated; at least one ISO 639 code must match the source's language. Pick from the language list beside the status.</small>
               </label>
             </div>
           </details>
@@ -248,6 +253,12 @@
           <h3>Corpus partitions</h3>
           <p class="form-note">Reviewed categories with the number of searchable sources carrying each. Select one to search it; select several to search their union.</p>
           <div id="partition-chips" class="partition-chips"></div>
+        </div>
+
+        <div id="language-summary" class="partition-summary" data-capability="bibliographic_filters" hidden>
+          <h3>Languages</h3>
+          <p class="form-note">The language recorded for each searchable source. Select one to search it; select several to search their union.</p>
+          <div id="language-chips" class="partition-chips"></div>
         </div>
 
         <div id="client-summary" class="partition-summary" data-capability="clients" hidden>

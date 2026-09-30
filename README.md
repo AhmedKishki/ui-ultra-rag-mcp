@@ -151,12 +151,12 @@ Four further capability flags are opt-in and cover filters a server may not impl
 
 | Capability | What the UI adds | Search fields it sends |
 |---|---|---|
-| `bibliographic_filters` | "Limit by author or work" with an any-of author list and an any-of title list | `authors_any`, `titles_any` |
+| `bibliographic_filters` | "Limit by author, work, or language" with an any-of author list, an any-of title list, and an any-of language list, plus a language list beside the status | `authors_any`, `titles_any`, `languages_any` |
 | `source_selection` | "Limit to named sources" with include and exclude lists, a stable-ID line on every source card, and **Only this source** / **Exclude from search** actions | `source_ids`, `exclude_source_ids` |
 | `category_partitions` | "Limit to corpus partitions" any-of filter and a partition list beside the status, with one chip per category and its searchable source count | `categories_any` (and `categories_any` on the source listing) |
 | `project_metadata` | A **Projects** field in the metadata editor, "Limit to projects" any-of filter, a project list beside the status, and a project tag on every source card | `projects`, `projects_any` (and both on the source listing) |
 
-All four default to `False`, so an adapter that does not support them sees neither the controls nor the extra request fields, and a request that still carries them is rejected with a 400 rather than forwarded. The partition and project lists are read from the status response's `categories` and `projects` entries; the UI never derives either from source metadata itself.
+All four default to `False`, so an adapter that does not support them sees neither the controls nor the extra request fields, and a request that still carries them is rejected with a 400 rather than forwarded. The partition, project, and language lists are read from the status response's `categories`, `projects`, and `languages` entries; the UI never derives any of them from source metadata itself.
 
 The adapter owns MCP startup and shutdown, error translation, source-file and memory-scope authorization, and schema normalization. The shared host never reads an index, a memory directory, or any other file of its own accord. See the tests for a minimal in-memory adapter.
 

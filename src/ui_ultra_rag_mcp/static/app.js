@@ -334,6 +334,7 @@ function renderStatus(status) {
   configureRetrieval(status);
   renderPartitions(status);
   renderProjects(status);
+  renderLanguages(status);
 }
 
 function tagList(values, className = "tag") {
@@ -383,6 +384,10 @@ function renderPartitions(status) {
 
 function renderProjects(status) {
   renderInventory("project-chips", status.projects || [], "project", "project-filter");
+}
+
+function renderLanguages(status) {
+  renderInventory("language-chips", status.languages || [], "language", "language-filter");
 }
 
 const MEMORY_SCOPE_LIMIT = 10;
@@ -885,6 +890,7 @@ async function search(event) {
     keywords: hasCapability("metadata_filters") ? listValue(byId("keyword-filter").value) : null,
     authors_any: hasCapability("bibliographic_filters") ? listValue(byId("author-filter").value) : null,
     titles_any: hasCapability("bibliographic_filters") ? listValue(byId("title-filter").value) : null,
+    languages_any: hasCapability("bibliographic_filters") ? listValue(byId("language-filter").value) : null,
     source_ids: hasCapability("source_selection") ? listValue(byId("include-source-filter").value) : null,
     exclude_source_ids: hasCapability("source_selection") ? listValue(byId("exclude-source-filter").value) : null,
   };
@@ -1133,6 +1139,7 @@ function handleAction(event) {
   } else if (action === "ingest") byId("ingest-dialog").showModal();
   else if (action === "partition-filter") addSearchFilter("category-any-filter", value);
   else if (action === "project-filter") addSearchFilter("project-any-filter", value);
+  else if (action === "language-filter") addSearchFilter("language-filter", value);
   else if (action === "only-source") addSearchFilter("include-source-filter", value);
   else if (action === "exclude-from-search") addSearchFilter("exclude-source-filter", value);
   else if (action === "copy-standing" || action === "edit-standing") {
