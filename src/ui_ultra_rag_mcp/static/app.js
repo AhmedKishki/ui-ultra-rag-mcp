@@ -146,6 +146,9 @@ function setBusy(active, message = "Working…") {
   byId("ingest-button").disabled = active || !hasCapability("ingestion");
   byId("export-button").disabled = active || !hasCapability("bundle_export");
   byId("import-button").disabled = active || !hasCapability("bundle_import");
+  // The run button is a submit, so re-enabling every submit above would leave it
+  // live with nothing typed in it. Its own gate is the scope and the statement.
+  syncSqlControls();
 }
 
 function toast(message, isError = false) {
@@ -336,6 +339,7 @@ function renderStatus(status) {
   renderProjects(status);
   renderLanguages(status);
   if (hasCapability("generations")) renderGenerations(status.generations || []);
+  if (hasCapability("sql_console")) renderSqlConsole(status);
 }
 
 function tagList(values, className = "tag") {
@@ -1053,6 +1057,144 @@ async function removeGeneration(event) {
   }
 }
 
+function sqlScopes(status) {
+  // A scope is an opaque identifier the server reported, so it is read here and
+  // nowhere else, and a bare string is accepted as well as a described entry.
+  return (status.sql_scopes || [])
+    .map((entry) => (typeof entry === "string" ? { scope: entry } : entry))
+    .filter((entry) => entry && typeof entry.scope === "string" && entry.scope.trim());
+}
+
+function syncSqlControls() {
+  const ready = Boolean(
+    byId("sql-scope").value && byId("sql-statement").value.trim() && !state.busy,
+  );
+  byId("sql-run-button").disabled = !ready;
+  byId("sql-execute-button").disabled = !ready;
+}
+
+function renderSqlConsole(status) {
+  const select = byId("sql-scope");
+  const scopes = sqlScopes(status);
+  const chosen = select.value;
+  select.replaceChildren();
+  for (const entry of scopes) {
+    const option = node("option", "", entry.label || entry.scope);
+    option.value = entry.scope;
+    select.append(option);
+  }
+  if (scopes.some((entry) => entry.scope === chosen)) select.value = chosen;
+  select.disabled = !scopes.length;
+  const message = byId("sql-message");
+  message.hidden = scopes.length > 0;
+  message.textContent = scopes.length
+    ? ""
+    : "This server reports no SQL scope, so there is nothing to run a statement against.";
+  syncSqlControls();
+}
+
+function sqlCell(value) {
+  return node(
+    "td",
+    "sql-cell",
+    value === null || value === undefined ? "—" : String(value),
+  );
+}
+
+function renderSqlResult(payload) {
+  const container = byId("sql-results");
+  container.replaceChildren();
+  const columns = Array.isArray(payload.columns) ? payload.columns : [];
+  const rows = Array.isArray(payload.rows) ? payload.rows : [];
+  const count = payload.row_count ?? rows.length;
+  container.append(node("p", "result-meta", `${formatNumber(count)} row${count === 1 ? "" : "s"}`));
+  if (!columns.length) {
+    container.append(node("div", "no-records", "The server returned no columns."));
+    return;
+  }
+
+  const table = node("table", "sql-table");
+  const header = node("tr");
+  for (const column of columns) {
+    const cell = node("th", "", column);
+    cell.scope = "col";
+    header.append(cell);
+  }
+  const head = node("thead");
+  head.append(header);
+  const body = node("tbody");
+  for (const row of rows) {
+    const line = node("tr");
+    for (const value of row) line.append(sqlCell(value));
+    body.append(line);
+  }
+  table.append(head, body);
+  container.append(table);
+  if (payload.truncated) {
+    container.append(
+      node(
+        "p",
+        "form-note",
+        `The server truncated this result: ${formatNumber(rows.length)} rows are shown of ${formatNumber(count)}.`,
+      ),
+    );
+  }
+}
+
+function sqlRequest() {
+  const scope = byId("sql-scope").value;
+  const statement = byId("sql-statement").value.trim();
+  if (!scope || !statement) {
+    toast("A scope and a statement are required.", true);
+    return null;
+  }
+  return { scope, statement };
+}
+
+async function runSql(event) {
+  event.preventDefault();
+  const request = sqlRequest();
+  if (!request) return;
+  setBusy(true, "Running the statement…");
+  try {
+    const result = await api("/api/sql/query", {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+    byId("sql-affected").hidden = true;
+    renderSqlResult(result);
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function executeSql() {
+  const request = sqlRequest();
+  if (!request) return;
+  setBusy(true, "Applying the statement to stored records…");
+  try {
+    const result = await api("/api/sql/execute", {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+    const affected = result.rows_affected ?? 0;
+    byId("sql-results").replaceChildren();
+    const line = byId("sql-affected");
+    line.hidden = false;
+    line.textContent = `Statement applied. ${formatNumber(affected)} record${affected === 1 ? "" : "s"} affected.${result.reindexed ? " The server reindexed the change." : ""}`;
+    toast("Statement applied.");
+    // A reindexed write changed what a search reads, so the status beside the
+    // panel would otherwise go on describing the records before it.
+    if (result.reindexed) await loadWorkspace();
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function saveMetadata(event) {
   event.preventDefault();
   const yearText = byId("metadata-year").value.trim();
@@ -1283,6 +1425,9 @@ function initialize() {
     byId("generation-submit").disabled =
       event.target.value.trim() !== byId("generation-remove-id").value;
   });
+  byId("sql-form").addEventListener("submit", runSql);
+  byId("sql-execute-button").addEventListener("click", executeSql);
+  byId("sql-statement").addEventListener("input", syncSqlControls);
   loadWorkspace();
 }
 

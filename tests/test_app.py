@@ -145,6 +145,49 @@ def _profile(**capabilities: bool) -> UIProfile:
     )
 
 
+class SqlRecordAdapter(FakeAdapter):
+    """A corpus fake that also runs statements against the records it stores."""
+
+    def __init__(self, source: Path) -> None:
+        super().__init__(source)
+        self.statements: list[tuple[str, str, str]] = []
+
+    async def sql_query(self, scope: str, statement: str) -> Mapping[str, Any]:
+        self.statements.append((scope, statement, "query"))
+        if "current_generation" in statement:
+            raise UIRequestError(
+                "The generation in use cannot be edited", status_code=409
+            )
+        return {
+            "columns": ["generation_id", "chunk_count"],
+            "rows": [["generation-1", 128], ["generation-2", 64]],
+            "row_count": 2,
+            "statement": statement,
+            "scope": scope,
+        }
+
+    async def sql_execute(self, scope: str, statement: str) -> Mapping[str, Any]:
+        self.statements.append((scope, statement, "execute"))
+        return {
+            "scope": scope,
+            "rows_affected": 1,
+            "statement": statement,
+            "reindexed": True,
+        }
+
+
+def _sql_host(adapter: Any, *, enabled: bool = True) -> TestClient:
+    return TestClient(
+        create_ui_app(profile=_profile(sql_console=enabled), adapter=adapter)
+    )
+
+
+def _source(tmp_path: Path) -> Path:
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    return source
+
+
 def test_workspace_and_normalized_read_operations(tmp_path: Path) -> None:
     source = tmp_path / "evidence.pdf"
     source.write_bytes(b"%PDF-1.4\n% test\n")
@@ -956,3 +999,192 @@ def test_the_status_view_carries_the_generation_panel_and_its_dialog() -> None:
     assert "/api/generations/remove" in javascript
     # The one a search reads is not offered a removal it would only refuse.
     assert "if (!generation.is_current)" in javascript
+
+
+def test_a_sql_statement_reads_the_records_the_adapter_stores(tmp_path: Path) -> None:
+    """The result envelope reaches the page exactly as the adapter sent it.
+
+    The panel is given columns and rows and nothing else, so any reshaping here
+    would be a panel that renders a table the adapter did not return.
+    """
+
+    adapter = SqlRecordAdapter(_source(tmp_path))
+    statement = "SELECT generation_id, chunk_count FROM generations"
+
+    with _sql_host(adapter) as client:
+        assert client.get("/api/ui").json()["capabilities"]["sql_console"] is True
+        response = client.post(
+            "/api/sql/query",
+            json={"scope": "  generations  ", "statement": statement},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "columns": ["generation_id", "chunk_count"],
+        "rows": [["generation-1", 128], ["generation-2", 64]],
+        "row_count": 2,
+        "statement": statement,
+        "scope": "generations",
+    }
+    # The statement travels as typed; the scope is trimmed because an identifier
+    # carried with stray whitespace is one the adapter does not recognise.
+    assert adapter.statements == [("generations", statement, "query")]
+
+
+def test_a_sql_write_reports_the_records_it_affected(tmp_path: Path) -> None:
+    adapter = SqlRecordAdapter(_source(tmp_path))
+    statement = "DELETE FROM generations WHERE generation_id = 'generation-1';"
+
+    with _sql_host(adapter) as client:
+        response = client.post(
+            "/api/sql/execute",
+            json={"scope": "generations", "statement": statement},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "scope": "generations",
+        "rows_affected": 1,
+        "statement": statement,
+        "reindexed": True,
+    }
+    assert adapter.statements == [("generations", statement, "execute")]
+
+
+def test_the_sql_routes_are_absent_when_the_capability_is_off(tmp_path: Path) -> None:
+    """A store this library cannot know about is not reachable from a workspace."""
+
+    adapter = SqlRecordAdapter(_source(tmp_path))
+
+    with _sql_host(adapter, enabled=False) as client:
+        assert client.get("/api/ui").json()["capabilities"]["sql_console"] is False
+        read = client.post(
+            "/api/sql/query", json={"scope": "generations", "statement": "SELECT 1"}
+        )
+        write = client.post(
+            "/api/sql/execute",
+            json={"scope": "generations", "statement": "DELETE FROM generations"},
+        )
+
+    assert read.status_code == 404
+    assert write.status_code == 404
+    assert adapter.statements == []
+
+
+def test_a_sql_request_must_carry_a_scope_and_a_statement(tmp_path: Path) -> None:
+    """A statement without a scope would be a statement against whatever is open."""
+
+    adapter = SqlRecordAdapter(_source(tmp_path))
+    scope = "generations"
+    statement = "SELECT 1"
+
+    with _sql_host(adapter) as client:
+        no_scope = client.post("/api/sql/query", json={"statement": statement})
+        blank_scope = client.post(
+            "/api/sql/query", json={"scope": "   ", "statement": statement}
+        )
+        wrong_scope = client.post(
+            "/api/sql/query", json={"scope": 7, "statement": statement}
+        )
+        no_statement = client.post("/api/sql/query", json={"scope": scope})
+        blank_statement = client.post(
+            "/api/sql/query", json={"scope": scope, "statement": "\n\t "}
+        )
+        no_scope_write = client.post("/api/sql/execute", json={"statement": statement})
+        unknown_field = client.post(
+            "/api/sql/execute",
+            json={"scope": scope, "statement": statement, "path": "../outside"},
+        )
+
+    assert no_scope.status_code == 400
+    assert "scope is required" in no_scope.json()["error"]
+    assert blank_scope.status_code == 400
+    assert wrong_scope.status_code == 400
+    assert no_statement.status_code == 400
+    assert "statement is required" in no_statement.json()["error"]
+    assert blank_statement.status_code == 400
+    assert no_scope_write.status_code == 400
+    assert unknown_field.status_code == 400
+    assert "Unsupported SQL fields: path" in unknown_field.json()["error"]
+    # Every refusal happened in the workspace, so the adapter saw nothing.
+    assert adapter.statements == []
+
+
+def test_a_runaway_statement_stops_at_the_request_layer(tmp_path: Path) -> None:
+    """A paste of a script stops here rather than travelling to the store."""
+
+    adapter = SqlRecordAdapter(_source(tmp_path))
+
+    with _sql_host(adapter) as client:
+        refused = client.post(
+            "/api/sql/query",
+            json={"scope": "generations", "statement": "SELECT 1\n" * 20000},
+        )
+        accepted = client.post(
+            "/api/sql/query",
+            json={"scope": "generations", "statement": "SELECT 1"},
+        )
+
+    assert refused.status_code == 400
+    assert "20000 characters" in refused.json()["error"]
+    assert accepted.status_code == 200
+    assert len(adapter.statements) == 1
+
+
+def test_an_sql_refusal_keeps_its_own_status_and_reason(tmp_path: Path) -> None:
+    """A store that will not be edited has said something a reader can act on.
+
+    Translating that into a generic failure would throw the reason away, so a
+    statement route carries the same translation the operation routes do.
+    """
+
+    with _sql_host(SqlRecordAdapter(_source(tmp_path))) as client:
+        response = client.post(
+            "/api/sql/query",
+            json={"scope": "generations", "statement": "SELECT current_generation"},
+        )
+
+    assert response.status_code == 409
+    assert "cannot be edited" in response.json()["error"]
+
+
+def test_a_sql_statement_is_same_origin_and_json_only(tmp_path: Path) -> None:
+    """A statement writes records, so it is held to the write rules."""
+
+    adapter = SqlRecordAdapter(_source(tmp_path))
+    body = {"scope": "generations", "statement": "DELETE FROM generations"}
+    form = {
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+
+    with _sql_host(adapter) as client:
+        cross_origin = [
+            client.post(
+                "/api/sql/query", headers={"Origin": "https://example.com"}, json=body
+            ),
+            client.post(
+                "/api/sql/execute", headers={"Origin": "https://example.com"}, json=body
+            ),
+        ]
+        form_encoded = [
+            client.post("/api/sql/query", content=b"scope=generations", headers=form),
+            client.post("/api/sql/execute", content=b"scope=generations", headers=form),
+        ]
+
+    assert [response.status_code for response in cross_origin] == [403, 403]
+    assert [response.status_code for response in form_encoded] == [415, 415]
+    assert adapter.statements == []
+
+
+def test_a_host_that_advertises_the_sql_console_and_cannot_answer_says_501(
+    tmp_path: Path,
+) -> None:
+    """A capability without the methods is a host fact, not a traceback."""
+
+    with _sql_host(FakeAdapter(_source(tmp_path))) as client:
+        response = client.post(
+            "/api/sql/query", json={"scope": "generations", "statement": "SELECT 1"}
+        )
+
+    assert response.status_code == 501
+    assert "cannot run statements" in response.json()["error"]

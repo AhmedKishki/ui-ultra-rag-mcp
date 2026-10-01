@@ -47,6 +47,10 @@ class UICapabilities:
     # the removal needs a route, so the flag gates a panel that would otherwise
     # be a set of chips and a button that cannot act.
     generations: bool = False
+    # Whether this adapter can run a statement against its own stored records.
+    # Off by default: a library cannot know which store an adapter keeps, and a
+    # panel that could change records must not appear beside one that only reads.
+    sql_console: bool = False
 
     def as_dict(self) -> dict[str, bool]:
         return asdict(self)
@@ -143,6 +147,23 @@ class ClientControl(Protocol):
     async def disconnect_client(
         self, session_id: str, reason: str | None = None
     ) -> Mapping[str, Any]: ...
+
+
+class SqlConsole(Protocol):
+    """Reading and editing an adapter's own stored records.
+
+    Separate from `UIAdapter` because a statement is not a document operation:
+    the workspace names a scope the adapter reported and forwards a statement
+    unchanged, so a route that needs this checks for it at run time rather than
+    making every adapter carry two methods it cannot answer. Nothing here names
+    a store, resolves a path, or decides what a statement may say — the adapter
+    runs the statement against its own storage and refuses whatever it will not
+    do, and the refusal reaches the browser with its own status and reason.
+    """
+
+    async def sql_query(self, scope: str, statement: str) -> Mapping[str, Any]: ...
+
+    async def sql_execute(self, scope: str, statement: str) -> Mapping[str, Any]: ...
 
 
 AdapterContext: TypeAlias = AbstractAsyncContextManager[UIAdapter]

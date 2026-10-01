@@ -29,6 +29,9 @@ from .contracts import (
 LOGGER = logging.getLogger(__name__)
 STATIC_ROOT = Path(__file__).with_name("static")
 MAX_ERROR_LENGTH = 1200
+# A statement is forwarded whole and unchanged, so the request layer is where an
+# accidental paste stops: past this length it is a file, not a statement.
+MAX_SQL_STATEMENT = 20000
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 _OPERATION_CAPABILITY = {
@@ -352,8 +355,8 @@ async def _import_bundle(request: Request) -> Response:
     return JSONResponse(await _adapter_call(request, "import_bundle", body))
 
 
-def _client_control(request: Request) -> Any:
-    """The adapter's client control, or a refusal when it has none.
+def _adapter_protocol(request: Request, methods: tuple[str, ...], refusal: str) -> Any:
+    """The adapter's own methods for one protocol, or a refusal when it has none.
 
     Checked at run time rather than by capability alone, because a host may
     advertise the capability and still not expose the methods; a 501 names that
@@ -361,21 +364,19 @@ def _client_control(request: Request) -> Any:
     """
 
     adapter: Any = request.app.state.adapter
-    for method in ("list_clients", "disconnect_client"):
+    for method in methods:
         if not callable(getattr(adapter, method, None)):
-            raise HTTPException(
-                status_code=501, detail="This host cannot report its clients."
-            )
+            raise HTTPException(status_code=501, detail=refusal)
     return adapter
 
 
-async def _call_client(adapter: Any, method: str, *args: Any) -> Any:
-    """One client call, with the adapter's own refusal kept intact.
+async def _call_adapter(adapter: Any, method: str, *args: Any) -> Any:
+    """One direct adapter call, with the adapter's own refusal kept intact.
 
-    A host refuses a client request for a reason a reader can act on — a session
-    that is already gone, or a workspace served without a process behind it — and
-    translating that into a generic failure would throw the reason away. The
-    translation `_adapter_call` applies is therefore applied here too.
+    A host refuses a direct request for a reason a reader can act on — a session
+    that is already gone, a store that is read-only, a statement it will not run
+    — and translating that into a generic failure would throw the reason away.
+    The translation `_adapter_call` applies is therefore applied here too.
     """
 
     try:
@@ -387,12 +388,20 @@ async def _call_client(adapter: Any, method: str, *args: Any) -> Any:
         ) from exc
 
 
+def _client_control(request: Request) -> Any:
+    return _adapter_protocol(
+        request,
+        ("list_clients", "disconnect_client"),
+        "This host cannot report its clients.",
+    )
+
+
 async def _clients(request: Request) -> Response:
     """The MCP clients attached to the process serving this workspace."""
 
     adapter = _client_control(request)
     _require_capability(request, "clients")
-    return JSONResponse({"clients": list(await _call_client(adapter, "list_clients"))})
+    return JSONResponse({"clients": list(await _call_adapter(adapter, "list_clients"))})
 
 
 async def _disconnect(request: Request) -> Response:
@@ -406,11 +415,73 @@ async def _disconnect(request: Request) -> Response:
     if reason is not None and not isinstance(reason, str):
         raise HTTPException(status_code=400, detail="A reason must be a string.")
     return JSONResponse(
-        await _call_client(
+        await _call_adapter(
             adapter,
             "disconnect_client",
             session_id,
             reason or "Disconnected by request.",
+        )
+    )
+
+
+def _sql_console(request: Request) -> Any:
+    return _adapter_protocol(
+        request,
+        ("sql_query", "sql_execute"),
+        "This host cannot run statements against its records.",
+    )
+
+
+def _sql_request(body: Mapping[str, Any]) -> dict[str, str]:
+    """The scope and statement a reader sent, checked before the adapter sees it.
+
+    The scope is trimmed because an identifier carried with stray whitespace is
+    one the adapter does not recognise; the statement is not, because its own
+    whitespace and its semicolon are part of what was asked for.
+    """
+
+    unknown = set(body) - {"scope", "statement"}
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported SQL fields: {', '.join(sorted(unknown))}",
+        )
+    scope = body.get("scope")
+    if not isinstance(scope, str) or not scope.strip():
+        raise HTTPException(status_code=400, detail="A SQL scope is required")
+    statement = body.get("statement")
+    if not isinstance(statement, str) or not statement.strip():
+        raise HTTPException(status_code=400, detail="A SQL statement is required")
+    if len(statement) > MAX_SQL_STATEMENT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A SQL statement is limited to {MAX_SQL_STATEMENT} characters",
+        )
+    return {"scope": scope.strip(), "statement": statement}
+
+
+async def _sql_query(request: Request) -> Response:
+    """Read the records an adapter stores, as the rows the adapter returned."""
+
+    adapter = _sql_console(request)
+    _require_capability(request, "sql_console")
+    arguments = _sql_request(await _json_body(request))
+    return JSONResponse(
+        await _call_adapter(
+            adapter, "sql_query", arguments["scope"], arguments["statement"]
+        )
+    )
+
+
+async def _sql_execute(request: Request) -> Response:
+    """Run a statement that changes stored records; the adapter decides it may."""
+
+    adapter = _sql_console(request)
+    _require_capability(request, "sql_console")
+    arguments = _sql_request(await _json_body(request))
+    return JSONResponse(
+        await _call_adapter(
+            adapter, "sql_execute", arguments["scope"], arguments["statement"]
         )
     )
 
@@ -592,6 +663,8 @@ def create_ui_app(
         Route(
             "/api/clients/{session_id:str}/disconnect", _disconnect, methods=["POST"]
         ),
+        Route("/api/sql/query", _sql_query, methods=["POST"]),
+        Route("/api/sql/execute", _sql_execute, methods=["POST"]),
         Route("/api/source-file", _source_file),
         Route("/api/memory", _memory_status),
         Route("/api/memory/rounds", _memory_rounds),

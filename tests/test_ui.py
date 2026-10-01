@@ -1,9 +1,13 @@
-"""The attached-clients view: opt-in, and held to the write rules.
+"""The attached-clients view and the SQL console: opt-in, and held to the write rules.
 
 A host may serve this workspace and still not be a server — a stdio-only process
 has no other client to report — so both the capability and the two routes are off
 until a host turns them on, and a host that turns them on without the methods is
 told so rather than raising.
+
+A store this library cannot know about is the same case: the SQL panel ships
+hidden and only an adapter that declares `sql_console` fills it, because the
+scopes it offers and the statements it will run are the adapter's decisions.
 """
 
 from __future__ import annotations
@@ -179,3 +183,124 @@ def test_the_status_view_carries_the_clients_panel() -> None:
         page = client.get("/")
     assert 'id="client-chips"' in page.text
     assert 'data-capability="clients"' in page.text
+
+
+class SqlConsoleHost:
+    """A host that serves the workspace without exposing a store at all.
+
+    No statement method, because this half of the capability is about what the
+    page ships: the panel, its gating, and the envelope it renders.
+    """
+
+    async def health(self) -> Mapping[str, Any]:
+        return {"status": "ok"}
+
+    async def call(
+        self, operation: str, arguments: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
+        if operation == "status":
+            return {
+                "ready": True,
+                "project_root": "/p",
+                "project_name": "p",
+                "sql_scopes": [{"scope": "generations", "label": "Generations"}],
+            }
+        if operation == "list_sources":
+            return {"ready": True, "source_count": 0, "sources": []}
+        raise UIRequestError(f"Operation {operation!r} is not available", 404)
+
+    async def source_file(self, source_path: str) -> SourceFile:  # pragma: no cover
+        raise UIRequestError("not used")
+
+
+def _sql_host(*, enabled: bool) -> TestClient:
+    return TestClient(
+        create_ui_app(
+            profile=UIProfile(
+                application_name="SQL host",
+                capabilities=UICapabilities(sql_console=enabled),
+            ),
+            adapter=SqlConsoleHost(),
+        )
+    )
+
+
+def test_the_status_view_carries_the_sql_console_panel() -> None:
+    """The panel ships hidden and is revealed by the capability, not by a route."""
+
+    with _sql_host(enabled=True) as client:
+        page = client.get("/")
+        script = client.get("/assets/app.js")
+
+    assert (
+        'id="sql-console" class="partition-summary" data-capability="sql_console" hidden'
+        in page.text
+    )
+    assert 'id="sql-scope"' in page.text
+    assert 'id="sql-statement"' in page.text
+    assert 'id="sql-results"' in page.text
+    assert 'hasCapability("sql_console")' in script.text
+    # The listing of scopes is free in the status payload, so the panel needs no
+    # read route of its own and the select is filled from what the host reported.
+    assert "renderSqlConsole(status)" in script.text
+    assert "status.sql_scopes || []" in script.text
+
+
+def test_the_sql_console_is_off_until_an_adapter_declares_it() -> None:
+    """A library cannot know which store an adapter keeps, so it offers none."""
+
+    with _sql_host(enabled=False) as client:
+        ui = client.get("/api/ui").json()
+        page = client.get("/").text
+
+    assert ui["capabilities"]["sql_console"] is False
+    assert 'data-capability="sql_console" hidden' in page
+
+
+def test_the_sql_console_renders_the_envelope_the_server_returned() -> None:
+    """A grid is drawn from the columns and rows the adapter sent, and nothing else."""
+
+    with _sql_host(enabled=True) as client:
+        script = client.get("/assets/app.js").text
+        page = client.get("/").text
+
+    for field in (
+        "payload.columns",
+        "payload.rows",
+        "payload.row_count",
+        "payload.truncated",
+    ):
+        assert field in script
+    assert "/api/sql/query" in script
+    assert "renderSqlResult(result)" in script
+    assert 'node("table", "sql-table")' in script
+    # An execute reports what it changed, and a reindexed write is said to be
+    # one, because the reader's next search reads different records.
+    assert "result.rows_affected" in script
+    assert "The server reindexed the change." in script
+    # A write says so next to its own control rather than in a dialog the
+    # capability cannot be disabled from.
+    assert (
+        "Execute changes stored records, and the server reindexes the change." in page
+    )
+
+
+def test_the_sql_console_says_when_there_is_no_scope_to_run_against() -> None:
+    """A panel with an empty scope list has nothing to offer but says so."""
+
+    with _sql_host(enabled=True) as client:
+        script = client.get("/assets/app.js").text
+
+    assert "This server reports no SQL scope" in script
+    assert "message.hidden = scopes.length > 0" in script
+    assert "select.disabled = !scopes.length" in script
+    # Both controls wait for a scope and a statement, so neither sends an
+    # empty request the route would only refuse.
+    assert 'byId("sql-scope").value && byId("sql-statement").value.trim()' in script
+    assert 'byId("sql-run-button").disabled = !ready' in script
+    assert 'byId("sql-execute-button").disabled = !ready' in script
+    # The run button is a submit, and clearing the busy state re-enables every
+    # submit; the gate is re-applied there so a reader is not left with a live
+    # button that could only be refused.
+    busy = script.split("function setBusy(")[1].split("\n}\n")[0]
+    assert "syncSqlControls();" in busy

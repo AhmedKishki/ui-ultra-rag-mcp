@@ -580,6 +580,72 @@ h3 {
   margin-top: 0.5rem;
 }
 
+.sql-console-form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.sql-scope-field {
+  max-width: 28rem;
+}
+
+.sql-statement-field textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.sql-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sql-write-note {
+  flex: 1 1 18rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.sql-affected {
+  margin: 0.75rem 0 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.sql-results {
+  margin-top: 0.75rem;
+  overflow-x: auto;
+}
+
+.sql-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.sql-table th,
+.sql-table td {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.sql-table th {
+  background: #fafafa;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sql-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
 .result-footer {
   display: flex;
   align-items: center;

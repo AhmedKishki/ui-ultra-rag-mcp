@@ -273,6 +273,34 @@
           <div id="client-chips" class="partition-chips"></div>
         </div>
 
+        <div id="sql-console" class="partition-summary" data-capability="sql_console" hidden>
+          <h3>SQL console</h3>
+          <p class="form-note">
+            Read this project's stored records, or run a statement that changes them.
+            The server owns its store: it decides which scope a statement may reach and
+            refuses whatever it will not run. This workspace sends the statement as typed
+            and shows what came back.
+          </p>
+          <form id="sql-form" class="sql-console-form">
+            <label class="sql-scope-field" for="sql-scope">
+              <span class="field-label">Scope</span>
+              <select id="sql-scope" name="scope"></select>
+            </label>
+            <label class="sql-statement-field" for="sql-statement">
+              <span class="field-label">Statement</span>
+              <textarea id="sql-statement" name="statement" rows="4" spellcheck="false" placeholder="SELECT …"></textarea>
+            </label>
+            <div class="sql-actions">
+              <button id="sql-run-button" class="button button-primary" type="submit" disabled>Run query</button>
+              <button id="sql-execute-button" class="button button-danger" type="button" disabled>Execute write</button>
+              <small class="sql-write-note">Execute changes stored records, and the server reindexes the change. This workspace cannot undo it.</small>
+            </div>
+          </form>
+          <p id="sql-message" class="form-note" hidden></p>
+          <p id="sql-affected" class="sql-affected" hidden></p>
+          <div id="sql-results" class="sql-results" aria-live="polite"></div>
+        </div>
+
         <div id="status-notice" class="notice" hidden>
           <div>
             <strong id="status-notice-title">Attention needed</strong>

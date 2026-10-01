@@ -15,6 +15,7 @@ The `mcp` in the name identifies the interface it is designed to consume; it doe
 - optional metadata editing, source exclusion, source-file access, filters, retrieval modes, reranking, chunk settings, and portable-bundle controls;
 - optional per-query source selection, category-partition, and project-tag filters for servers that support them;
 - an optional memory view for servers that expose memory scopes, with opt-in writes;
+- an optional SQL console for servers that keep their records in a store a reader may need to read or repair;
 - capability flags so an adapter can hide unsupported actions;
 - an optional header label an adapter fills with its own version and this package's, so the running software is visible in the browser;
 - same-origin checks for writes, a strict content security policy, and loopback-only serving; and
@@ -76,7 +77,7 @@ class UIAdapter(Protocol):
 
 ### Optional memory view
 
-A server whose project keeps memory — a standing document plus dated rounds, or anything with that shape — can add a **Memory** view instead of a second application. Two capability flags are opt-in and default to `False`:
+A server whose project keeps memory — a standing document plus dated rounds, or anything with that shape — can add a **Memory** view instead of a second application. These capability flags are opt-in and default to `False`:
 
 | Capability | What the UI adds | Operations it enables |
 |---|---|---|
@@ -84,6 +85,7 @@ A server whose project keeps memory — a standing document plus dated rounds, o
 | `memory_writes` | An **Add a round** form inside each scope block and an **Edit standing memory** dialog | `memory_append`, `memory_standing_save` |
 | `clients` | An **Attached clients** panel on the status view, listing every MCP client connected to the host with a **Disconnect** action | `list_clients`, `disconnect_client` |
 | `generations` | A **Generations** panel on the status view listing every retained build with its size and which one is in use, with a **Remove** action and a dialog that requires the id typed back | `remove_generation` |
+| `sql_console` | A **SQL console** panel on the status view: a scope selector, a statement field, **Run query** and **Execute write**, a results grid, and a line naming the records a write changed | `sql_query`, `sql_execute` |
 
 `clients` is about the host rather than the corpus. A host that serves this workspace and is not a server — a stdio-only process, or a library embedded in one — has no other client to report, so the flag defaults to off and the panel and both routes stay absent. A host that turns it on must implement `list_clients()` and `disconnect_client()` on its adapter; a host that advertises the flag without them is refused with a 501 rather than raising inside the route. `disconnect_client` ends one session, and the client owns its process, so the UI says so next to the action. The write is same-origin JSON, like every other write here.
 
@@ -137,6 +139,21 @@ Both memory flags off means no tab, no route, and a 404 for every memory request
 The adapter owns every memory decision: which scopes exist, what they are called, where they live, what a round is, and whether a standing write is allowed.
 
 Every scope the status reports is shown at once, local and global together, each as a block with its own standing document, rounds, filter, and write form. At most ten are rendered and a note names how many were left out. The view holds no scope of its own: it sends back only the identifiers the status gave it.
+
+### SQL console
+
+A server whose records a reader may need to inspect, or repair, one statement at a time can add a **SQL console** to the status view. The `sql_console` flag is opt-in and defaults to `False`: this library cannot know which store an adapter keeps, and it must never open one of its own. A host that turns the flag on implements two methods on a `SqlConsole` protocol, separate from `UIAdapter`, because a statement is not a document operation:
+
+| Adapter method | Returns |
+|---|---|
+| `sql_query(scope, statement)` | `{"columns": [...], "rows": [[...]], "row_count": n, "statement": "...", "scope": "..."}`, plus `truncated` when the adapter cut the result short |
+| `sql_execute(scope, statement)` | `{"scope": "...", "rows_affected": n, "statement": "...", "reindexed": true}` |
+
+The scope selector is free: the scopes arrive in the status response's `sql_scopes` entries, each an object with a `scope` identifier and an optional `label`, and a bare scope string is accepted as well. A host that declares the flag and reports no scope gets the panel with both controls disabled and a line saying there is nothing to run against.
+
+The adapter owns the decision. It decides which scope a statement may reach, which statements it will run at all, and whether the rows are safe to send to a browser; a refusal is raised as `UIRequestError` and keeps its own status code and reason, so a read-only store says so instead of failing generically. The statement is forwarded exactly as typed, so its whitespace and its semicolon are part of what the adapter runs, while a scope is trimmed because an identifier with stray whitespace is not one the adapter recognises. A scope or statement that is missing or empty is a 400 before the adapter is called, and so is a statement longer than 20000 characters: a paste of a script stops here rather than travelling to the store. Both routes are same-origin JSON, loopback-only, like every other write here.
+
+**Execute write** changes stored records, and the panel says so beside its own control rather than in a dialog: the server reindexes the change, the affected-row count is reported afterwards, and this workspace cannot undo it.
 
 Bundle controls are disabled by default. A consuming server enables `bundle_export` and/or `bundle_import` in `UICapabilities` only when its adapter implements those operations. The shared UI never reads an archive itself. Servers that distinguish an ordinary re-ingestion from a forced rebuild can also enable `force_recompute`; the UI then sends that flag only for its **Regenerate** action.
 
