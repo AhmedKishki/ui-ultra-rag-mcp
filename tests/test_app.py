@@ -187,6 +187,32 @@ class FakeAdapter:
                 "included": arguments.get("included"),
                 "reason": arguments.get("reason"),
             },
+            "list_projects": {
+                "projects": [
+                    {
+                        "project_name": "thesis",
+                        "project_root": "/project",
+                        "running": True,
+                        "url": "http://127.0.0.1:5051",
+                        "attached_clients": 1,
+                    },
+                    {
+                        "project_name": "archive",
+                        "project_root": "/other/archive",
+                        "running": False,
+                        "url": None,
+                        "attached_clients": 0,
+                    },
+                ],
+                "current": "thesis",
+                "message": "",
+            },
+            "agent_entry": {
+                "entry": (
+                    '{\n  "mcp": {\n    "example": {"type": "local", '
+                    '"command": ["example", "mcp"]}\n  }\n}\n'
+                ),
+            },
         }
         return responses[operation]
 
@@ -771,6 +797,8 @@ def test_the_quotation_rule_is_not_a_footer(tmp_path: Path) -> None:
         "sources",
         "settings",
         "chunk_exclusion",
+        "projects",
+        "agent_entry",
     ):
         assert f'data-capability="{capability}"' in page.text
     # The search and ingestion payloads send a capability-gated field only when
@@ -1252,6 +1280,83 @@ def test_a_host_that_advertises_the_sql_console_and_cannot_answer_says_501(
 
     assert response.status_code == 501
     assert "cannot run statements" in response.json()["error"]
+
+
+def test_a_host_reports_the_projects_it_serves_and_its_own_client_entry(
+    tmp_path: Path,
+) -> None:
+    """The selector and the entry are the host's own answer, forwarded whole.
+
+    Both take no argument this repository could add: which projects exist and
+    what a client's configuration says are the host's facts, so a route here that
+    named one would be a second place for it to be wrong.
+    """
+
+    adapter = FakeAdapter(_source(tmp_path))
+    app = create_ui_app(
+        profile=_profile(projects=True, agent_entry=True), adapter=adapter
+    )
+
+    with TestClient(app) as client:
+        assert client.get("/api/ui").json()["capabilities"]["projects"] is True
+        projects = client.get("/api/projects")
+        entry = client.get("/api/agent-entry")
+
+    assert projects.status_code == 200
+    assert projects.json() == {
+        "projects": [
+            {
+                "project_name": "thesis",
+                "project_root": "/project",
+                "running": True,
+                "url": "http://127.0.0.1:5051",
+                "attached_clients": 1,
+            },
+            {
+                "project_name": "archive",
+                "project_root": "/other/archive",
+                "running": False,
+                "url": None,
+                "attached_clients": 0,
+            },
+        ],
+        "current": "thesis",
+        "message": "",
+    }
+    # The entry is the host's text, and the text is what a client is handed: a
+    # wrapper, a default, or a reformat here would be a client's configuration
+    # this repository had edited.
+    assert entry.status_code == 200
+    assert entry.json() == {
+        "entry": (
+            '{\n  "mcp": {\n    "example": {"type": "local", '
+            '"command": ["example", "mcp"]}\n  }\n}\n'
+        )
+    }
+    assert ("list_projects", {}) in adapter.calls
+    assert ("agent_entry", {}) in adapter.calls
+
+
+def test_the_projects_and_agent_entry_routes_are_absent_when_the_flags_are_off(
+    tmp_path: Path,
+) -> None:
+    """A host that serves one project has nothing to select and no entry to give."""
+
+    adapter = FakeAdapter(_source(tmp_path))
+
+    with TestClient(
+        create_ui_app(
+            profile=_profile(projects=False, agent_entry=False), adapter=adapter
+        )
+    ) as client:
+        assert client.get("/api/ui").json()["capabilities"]["projects"] is False
+        assert client.get("/api/ui").json()["capabilities"]["agent_entry"] is False
+        projects = client.get("/api/projects")
+        entry = client.get("/api/agent-entry")
+
+    assert projects.status_code == 404
+    assert entry.status_code == 404
+    assert adapter.calls == []
 
 
 def test_settings_are_read_and_written_through_the_adapter(tmp_path: Path) -> None:

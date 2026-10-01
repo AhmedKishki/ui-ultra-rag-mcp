@@ -1,4 +1,4 @@
-"""The attached-clients view and the SQL console: opt-in, and held to the write rules.
+"""The attached-clients view, the SQL console, and the tab bar that holds them.
 
 A host may serve this workspace and still not be a server — a stdio-only process
 has no other client to report — so both the capability and the two routes are off
@@ -8,10 +8,15 @@ told so rather than raising.
 A store this library cannot know about is the same case: the SQL panel ships
 hidden and only an adapter that declares `sql_console` fills it, because the
 scopes it offers and the statements it will run are the adapter's decisions.
+
+One installation serving several projects is the same case again: the selector
+and the client entry are the host's facts, so both ship behind a flag and neither
+is composed here.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -78,6 +83,52 @@ def _host(adapter: Any, *, enabled: bool = True) -> TestClient:
                 capabilities=UICapabilities(clients=enabled, retrieval_modes=False),
             ),
             adapter=adapter,
+        )
+    )
+
+
+def _project_host() -> TestClient:
+    """A host serving several projects from one installation."""
+
+    class ProjectHost(ClientControlAdapter):
+        async def call(
+            self, operation: str, arguments: Mapping[str, Any]
+        ) -> Mapping[str, Any]:
+            if operation == "list_projects":
+                return {
+                    "projects": [
+                        {
+                            "project_name": "thesis",
+                            "project_root": "/projects/thesis",
+                            "running": True,
+                            "url": "http://127.0.0.1:5051",
+                            "attached_clients": 1,
+                        },
+                        {
+                            "project_name": "archive",
+                            "project_root": "/projects/archive",
+                            "running": False,
+                            "url": None,
+                            "attached_clients": 0,
+                        },
+                    ],
+                    "current": "thesis",
+                    "message": "",
+                }
+            if operation == "agent_entry":
+                return {"entry": '{\n  "mcp": {}\n}\n'}
+            return await super().call(operation, arguments)
+
+    return TestClient(
+        create_ui_app(
+            profile=UIProfile(
+                application_name="Project host",
+                project_start_command="research-rag --project {project} ui",
+                capabilities=UICapabilities(
+                    clients=True, projects=True, agent_entry=True
+                ),
+            ),
+            adapter=ProjectHost(),
         )
     )
 
@@ -176,13 +227,26 @@ def test_the_disconnect_reason_must_be_a_string() -> None:
     assert adapter.dropped == []
 
 
-def test_the_status_view_carries_the_clients_panel() -> None:
-    """The panel ships hidden and is revealed by the capability, not by a route."""
+def test_the_mcp_view_carries_the_clients_panel() -> None:
+    """The panel ships inside the MCP tab and is revealed by the capability.
+
+    A tab is one panel's way in, so the tab carries the same capability the panel
+    does: a tab whose panel the host does not serve would be a way into nothing.
+    """
 
     with _host(ClientControlAdapter()) as client:
         page = client.get("/")
+        script = client.get("/assets/app.js")
+
+    assert 'data-panel="mcp" data-capability="clients"' in page.text
+    assert 'data-view="mcp" data-capability="clients"' in page.text
     assert 'id="client-chips"' in page.text
-    assert 'data-capability="clients"' in page.text
+    assert 'id="agent-endpoint"' in page.text
+    # The endpoint is free in the status payload, so the block reads it there
+    # rather than asking the host a second question.
+    assert 'id="agent-url"' in page.text
+    assert "status.mcp_url" in script.text
+    assert "This host reports no MCP endpoint" in script.text
 
 
 class SqlConsoleHost:
@@ -382,24 +446,26 @@ def _panel_host() -> TestClient:
     )
 
 
-def test_the_status_view_carries_the_settings_panel_and_its_confirmation() -> None:
-    """The panel ships hidden and is revealed by the capability, not by a route."""
+def test_the_config_tab_carries_the_settings_panel_and_its_confirmation() -> None:
+    """The settings panel is the whole Config tab, not one block of the status."""
 
     with _panel_host() as client:
-        page = client.get("/")
+        page = client.get("/").text
         script = client.get("/assets/app.js").text
 
-    assert (
-        'id="settings-panel" class="partition-summary" data-capability="settings"'
-        in page.text
-    )
+    assert 'data-panel="config" data-capability="settings"' in page
+    assert 'data-view="config" data-capability="settings"' in page
+    assert 'id="settings-panel" class="settings-panel"' in page
     for element in ("settings-form", "settings-sections", "settings-submit"):
-        assert f'id="{element}"' in page.text
+        assert f'id="{element}"' in page
     # A change that costs a regeneration is confirmed by a typed word rather than
     # by a click, so the dialog is part of what the panel ships.
-    assert 'id="settings-confirm-dialog"' in page.text
-    assert 'id="settings-confirm-word"' in page.text
+    assert 'id="settings-confirm-dialog"' in page
+    assert 'id="settings-confirm-word"' in page
     assert 'hasCapability("settings")' in script
+    # It left the status section, and nothing is left behind there to show it
+    # twice.
+    assert page.index('id="settings-panel"') < page.index("system-summary")
 
 
 def test_the_settings_panel_reads_the_shape_the_server_sends() -> None:
@@ -468,3 +534,144 @@ def test_the_workspace_carries_the_chunk_exclusion_controls() -> None:
     assert 'id="exclusion-dialog"' in page.text
     assert 'hasCapability("source_inclusion")' in script
     assert "/api/source-inclusion" in script
+
+
+def test_the_tab_bar_is_the_whole_navigation() -> None:
+    """One tab per job, and a tab the host cannot serve is not in the strip.
+
+    A tab is a way into one panel, so every tab carries the capability that
+    decides whether its panel exists, and a tab strip holding no tab is removed
+    rather than left as a rule above nothing.
+    """
+
+    with _host(ClientControlAdapter()) as client:
+        page = client.get("/").text
+        script = client.get("/assets/app.js").text
+
+    tabs = re.findall(r'data-view="([^"]+)" data-capability="([^"]+)"', page)
+    assert tabs == [
+        ("search", "documents"),
+        ("sources", "sources"),
+        ("config", "settings"),
+        ("mcp", "clients"),
+        ("memory", "memory"),
+    ]
+    # Every tab has a panel, and every panel is reached by exactly one tab.
+    panels = re.findall(r'data-panel="([^"]+)" data-capability="([^"]+)"', page)
+    assert panels == tabs
+    assert 'byId("section-tabs").hidden = !visibleTabs.length' in script
+    # A profile that leaves no tab shows no panel rather than the panel of a tab
+    # that is gone.
+    assert "switchView(activeTab ? activeTab.dataset.view : null);" in script
+    # No id is declared twice: a second copy of a panel is a second place for it
+    # to be wrong, and a duplicated id would silently pick the first one.
+    identifiers = re.findall(r'\bid="([^"]+)"', page)
+    assert len(identifiers) == len(set(identifiers))
+
+
+def test_a_host_that_serves_no_panel_leaves_every_tab_out() -> None:
+    """A capability off hides its tab, and no panel is left standing behind it.
+
+    The strip is the navigation, so a tab that outlived its panel would be a way
+    into a page this host cannot answer, and a profile with nothing on offers no
+    panel rather than the one whose tab happened to be active.
+    """
+
+    adapter = ClientControlAdapter()
+    client = TestClient(
+        create_ui_app(
+            profile=UIProfile(
+                application_name="Bare host",
+                capabilities=UICapabilities(
+                    documents=False,
+                    sources=False,
+                    settings=False,
+                    clients=False,
+                    memory=False,
+                ),
+            ),
+            adapter=adapter,
+        )
+    )
+    with client:
+        capabilities = client.get("/api/ui").json()["capabilities"]
+        page = client.get("/").text
+        script = client.get("/assets/app.js").text
+
+    for capability in ("documents", "sources", "settings", "clients", "memory"):
+        assert capabilities[capability] is False
+    # Every panel and the status summary are gated on the same capabilities the
+    # tabs are, so nothing this host cannot answer has a way in.
+    for panel, capability in (
+        ("search", "documents"),
+        ("sources", "sources"),
+        ("config", "settings"),
+        ("mcp", "clients"),
+        ("memory", "memory"),
+    ):
+        assert f'data-panel="{panel}" data-capability="{capability}"' in page
+    assert 'class="system-summary" data-capability="documents"' in page
+    # The loop that hides by capability is the only thing that decides a tab, and
+    # what it leaves is handled rather than ignored.
+    hide = script.split("function applyProfile(")[1].split("\n}\n")[0]
+    assert "element.hidden = !hasCapability(element.dataset.capability);" in hide
+    assert "switchView(activeTab ? activeTab.dataset.view : null);" in hide
+    assert 'byId("section-tabs").hidden = !visibleTabs.length;' in hide
+
+
+def test_the_header_carries_a_projects_selector_the_host_supplies() -> None:
+    """Each project is named, its state is shown, and switching is never silent.
+
+    One installation serves several projects, so a workspace has to say which one
+    it is. Selecting another is offered that project's own workspace, and a
+    project with no app is offered the command that starts it, because it has no
+    address at all.
+    """
+
+    with _project_host() as client:
+        page = client.get("/")
+        script = client.get("/assets/app.js")
+
+    assert 'id="project-selector"' in page.text
+    assert 'data-capability="projects"' in page.text
+    assert 'id="project-select"' in page.text
+    assert 'id="project-open"' in page.text
+    assert 'id="project-start-command"' in page.text
+    assert 'id="project-copy-command"' in page.text
+    assert 'hasCapability("projects")' in script.text
+    assert "/api/projects" in script.text
+    # The current project is marked in the list, and every entry says whether its
+    # app is up rather than leaving the reader to try a URL.
+    assert "project.project_name === state.currentProject" in script.text
+    assert 'project.running ? "app up" : "app not running"' in script.text
+    # The control says that another project is a different page, and never
+    # repoints this one at it.
+    assert "Opening another project opens its own workspace in a new tab." in page.text
+    assert 'window.open(project.url, "_blank", "noopener")' in script.text
+    # The start command is the host's own, taken from the profile, because a
+    # command composed here is one the reader could paste and fail on.
+    assert "state.profile?.project_start_command" in script.text
+    assert 'template.replace("{project}", project.project_name)' in script.text
+    assert 'copyText(byId("project-start-command").textContent' in script.text
+
+
+def test_the_mcp_tab_carries_a_copyable_client_entry() -> None:
+    """The entry is the host's own text, offered for copying and nothing more."""
+
+    with _project_host() as client:
+        page = client.get("/")
+        script = client.get("/assets/app.js")
+
+    assert 'id="agent-entry-summary" class="partition-summary"' in page.text
+    assert 'data-capability="agent_entry"' in page.text
+    assert 'id="agent-entry" class="standing-document"' in page.text
+    assert 'id="agent-entry-copy"' in page.text
+    assert 'hasCapability("agent_entry")' in script.text
+    assert "/api/agent-entry" in script.text
+    # The text reaches the block and the clipboard unedited, and no generator is
+    # built here: a second one would be a second place for a client's
+    # configuration to be wrong.
+    assert 'byId("agent-entry").textContent = state.agentEntry' in script.text
+    assert 'copyText(state.agentEntry, "Client entry copied.")' in script.text
+    # It is the stdio entry, so the block says which client it is for.
+    assert "for a client that cannot open a socket" in page.text.lower()

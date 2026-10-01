@@ -22,6 +22,26 @@
         <span id="version-label" class="version-label" hidden></span>
       </div>
 
+      <div id="project-selector" class="project-selector" data-capability="projects" hidden>
+        <label class="compact-field" for="project-select">
+          <span>Projects</span>
+          <select id="project-select" name="project"></select>
+        </label>
+        <p class="form-note project-selector-note">
+          Opening another project opens its own workspace in a new tab.
+        </p>
+        <p id="project-selector-message" class="form-note" hidden></p>
+        <div class="project-actions">
+          <button id="project-open" class="button button-primary" type="button" hidden>
+            Open workspace
+          </button>
+          <p id="project-start-command" class="dialog-source-name" hidden></p>
+          <button id="project-copy-command" class="text-button" type="button" hidden>
+            Copy start command
+          </button>
+        </div>
+      </div>
+
       <div class="header-actions">
         <span id="connection-state" class="connection-state" data-state="loading">
           <span class="status-dot" aria-hidden="true"></span>
@@ -49,6 +69,12 @@
         </button>
         <button class="tab-button" type="button" data-view="sources" data-capability="sources" aria-selected="false">
           Sources <span id="source-tab-count" class="tab-count">0</span>
+        </button>
+        <button class="tab-button" type="button" data-view="config" data-capability="settings" aria-selected="false">
+          Config
+        </button>
+        <button class="tab-button" type="button" data-view="mcp" data-capability="clients" aria-selected="false">
+          MCP
         </button>
         <button class="tab-button" type="button" data-view="memory" data-capability="memory" aria-selected="false">
           <span id="memory-tab-label">Memory</span> <span id="memory-tab-count" class="tab-count">0</span>
@@ -207,6 +233,64 @@
         </section>
       </section>
 
+      <section id="config-view" class="view-panel" data-panel="config" data-capability="settings" hidden>
+        <div id="settings-panel" class="settings-panel">
+          <h2>Settings</h2>
+          <p class="form-note">
+            The values this server uses, where each came from, and what changing it
+            costs. A value the server set outside this project is shown as it is
+            and cannot be edited here.
+          </p>
+          <p id="settings-message" class="form-note" hidden></p>
+          <p id="settings-notice" class="notice-inline" hidden></p>
+          <form id="settings-form" class="settings-form">
+            <div id="settings-sections" class="settings-sections"></div>
+            <div class="sql-actions">
+              <button id="settings-submit" class="button button-primary" type="submit" disabled>Save changes</button>
+              <button id="settings-reload" class="button button-quiet" type="button">Reload settings</button>
+              <small class="sql-write-note">The server decides which values it will accept, and refuses anything else.</small>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section id="mcp-view" class="view-panel" data-panel="mcp" data-capability="clients" hidden>
+        <h2>MCP</h2>
+        <p class="form-note">
+          Where this app serves agents, which agents are attached to it now, and
+          the entry that points a new one at it.
+        </p>
+
+        <div id="client-summary" class="partition-summary">
+          <h3>Attached clients</h3>
+          <p class="form-note">Agents connected to this app over MCP. Disconnecting one ends its session; the client owns the process and decides whether to come back.</p>
+          <div id="client-chips" class="partition-chips"></div>
+        </div>
+
+        <div id="agent-endpoint" class="partition-summary">
+          <h3>Agent endpoint</h3>
+          <p class="form-note">The address an MCP client that can open a socket is given. It is served by the app this page belongs to.</p>
+          <div class="sql-actions">
+            <p id="agent-url" class="dialog-source-name"></p>
+            <button id="agent-url-copy" class="text-button" type="button" disabled>Copy endpoint</button>
+          </div>
+        </div>
+
+        <div id="agent-entry-summary" class="partition-summary" data-capability="agent_entry">
+          <h3>Client entry</h3>
+          <p class="form-note">
+            For a client that cannot open a socket. Copy it into that client's own
+            configuration; it names the project rather than its directory, so one
+            entry works on every machine holding the project.
+          </p>
+          <pre id="agent-entry" class="standing-document"></pre>
+          <div class="sql-actions">
+            <button id="agent-entry-copy" class="text-button" type="button" disabled>Copy client entry</button>
+            <small class="sql-write-note">Generated by the server this page is served by, and shown exactly as it produced it.</small>
+          </div>
+        </div>
+      </section>
+
       <section id="memory-view" class="view-panel" data-panel="memory" data-capability="memory" hidden>
         <div class="memory-toolbar">
           <h2 id="memory-heading">Memory</h2>
@@ -267,12 +351,6 @@
           <div id="generation-chips" class="partition-chips"></div>
         </div>
 
-        <div id="client-summary" class="partition-summary" data-capability="clients" hidden>
-          <h3>Attached clients</h3>
-          <p class="form-note">Agents connected to this app over MCP. Disconnecting one ends its session; the client owns the process and decides whether to come back.</p>
-          <div id="client-chips" class="partition-chips"></div>
-        </div>
-
         <div id="sql-console" class="partition-summary" data-capability="sql_console" hidden>
           <h3>SQL console</h3>
           <p class="form-note">
@@ -299,25 +377,6 @@
           <p id="sql-message" class="form-note" hidden></p>
           <p id="sql-affected" class="sql-affected" hidden></p>
           <div id="sql-results" class="sql-results" aria-live="polite"></div>
-        </div>
-
-        <div id="settings-panel" class="partition-summary" data-capability="settings" hidden>
-          <h3>Settings</h3>
-          <p class="form-note">
-            The values this server uses, where each came from, and what changing it
-            costs. A value the server set outside this project is shown as it is
-            and cannot be edited here.
-          </p>
-          <p id="settings-message" class="form-note" hidden></p>
-          <p id="settings-notice" class="notice-inline" hidden></p>
-          <form id="settings-form" class="settings-form">
-            <div id="settings-sections" class="settings-sections"></div>
-            <div class="sql-actions">
-              <button id="settings-submit" class="button button-primary" type="submit" disabled>Save changes</button>
-              <button id="settings-reload" class="button button-quiet" type="button">Reload settings</button>
-              <small class="sql-write-note">The server decides which values it will accept, and refuses anything else.</small>
-            </div>
-          </form>
         </div>
 
         <div id="chunk-exclusion-summary" class="partition-summary" data-capability="chunk_exclusion" hidden>

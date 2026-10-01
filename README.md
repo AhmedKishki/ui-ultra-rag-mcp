@@ -89,6 +89,8 @@ A server whose project keeps memory — a standing document plus dated rounds, o
 | `sql_console` | A **SQL console** panel on the status view: a scope selector, a statement field, **Run query** and **Execute write**, a results grid, and a line naming the records a write changed | `sql_query`, `sql_execute` |
 | `settings` | A **Settings** panel on the status view, listing every setting by section with its value, its origin, and what changing it costs | `settings_read`, `settings_write` |
 | `chunk_exclusion` | An **Exclude this chunk** action on every search hit and every passage of a context dialog, and a **Chunk exclusions** list on the status view with a restore for each row | `list_chunk_exclusions`, `set_chunk_inclusion` |
+| `projects` | A **Projects** selector in the header, beside the project name, listing every project this installation serves and whether an app is up for each | `list_projects` |
+| `agent_entry` | A copyable **Client entry** in the **MCP** tab, the host's own text, for a client that cannot open a socket | `agent_entry` |
 
 `clients` is about the host rather than the corpus. A host that serves this workspace and is not a server — a stdio-only process, or a library embedded in one — has no other client to report, so the flag defaults to off and the panel and both routes stay absent. A host that turns it on must implement `list_clients()` and `disconnect_client()` on its adapter; a host that advertises the flag without them is refused with a 501 rather than raising inside the route. `disconnect_client` ends one session, and the client owns its process, so the UI says so next to the action. The write is same-origin JSON, like every other write here.
 

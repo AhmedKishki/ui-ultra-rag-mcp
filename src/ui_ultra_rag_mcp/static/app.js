@@ -5,6 +5,9 @@ const state = {
   status: null,
   sources: [],
   excludedSources: [],
+  projects: [],
+  currentProject: "",
+  agentEntry: "",
   memory: null,
   memoryRounds: new Map(),
   memoryStanding: new Map(),
@@ -50,8 +53,13 @@ function applyProfile(profile) {
   const visibleTabs = [...document.querySelectorAll(".tab-button")].filter(
     (tab) => !tab.hidden,
   );
+  // A tab is one panel's way in, so a strip holding no tab is a rule above
+  // nothing and goes with them. The active tab is chosen from the tabs that
+  // survived the profile, and a profile that leaves none shows no panel at all
+  // rather than the panel of a tab that is gone.
+  byId("section-tabs").hidden = !visibleTabs.length;
   const activeTab = visibleTabs.find((tab) => tab.classList.contains("is-active"));
-  if (!activeTab && visibleTabs.length) switchView(visibleTabs[0].dataset.view);
+  switchView(activeTab ? activeTab.dataset.view : null);
 }
 
 function node(tag, className, text) {
@@ -272,6 +280,86 @@ async function loadClients() {
   }
 }
 
+function projectOptionLabel(project, isCurrent) {
+  const running = project.running ? "app up" : "app not running";
+  return isCurrent
+    ? `${project.project_name} · ${running} · this project`
+    : `${project.project_name} · ${running}`;
+}
+
+function selectedProject() {
+  return (
+    state.projects.find(
+      (project) => project.project_name === byId("project-select").value,
+    ) || null
+  );
+}
+
+function showProjectActions() {
+  const project = selectedProject();
+  const url = project?.url || "";
+  const open = byId("project-open");
+  open.hidden = !url;
+  // The command is the host's own, supplied through the profile, because a
+  // project with no app has no address and an invented one would be a command
+  // the reader pastes and fails on.
+  const template = state.profile?.project_start_command || "";
+  const command = template && project
+    ? template.replace("{project}", project.project_name)
+    : "";
+  byId("project-start-command").hidden = !command;
+  byId("project-start-command").textContent = command;
+  const copy = byId("project-copy-command");
+  copy.hidden = !command;
+  copy.disabled = !command;
+}
+
+function renderProjects(payload) {
+  state.projects = payload.projects || [];
+  state.currentProject = payload.current || "";
+  const select = byId("project-select");
+  select.replaceChildren();
+  for (const project of state.projects) {
+    const option = node(
+      "option",
+      "",
+      projectOptionLabel(project, project.project_name === state.currentProject),
+    );
+    option.value = project.project_name;
+    select.append(option);
+  }
+  // A host that registered no project leaves the selector disabled rather than
+  // offering an empty one a reader could choose from.
+  select.disabled = !state.projects.length;
+  if (state.projects.some((project) => project.project_name === state.currentProject)) {
+    select.value = state.currentProject;
+  }
+  const message = byId("project-selector-message");
+  message.hidden = !payload.message;
+  message.textContent = payload.message || "";
+  showProjectActions();
+}
+
+async function loadProjects() {
+  if (!hasCapability("projects")) return;
+  renderProjects(await api("/api/projects"));
+}
+
+function renderAgentEndpoint(status) {
+  const url = String(status.mcp_url || "");
+  byId("agent-url").textContent =
+    url || "This host reports no MCP endpoint, so it serves no agent surface.";
+  byId("agent-url-copy").disabled = !url;
+}
+
+async function loadAgentEntry() {
+  if (!hasCapability("agent_entry")) return;
+  const payload = await api("/api/agent-entry");
+  state.agentEntry = payload.entry || "";
+  byId("agent-entry").textContent = state.agentEntry;
+  byId("agent-entry-copy").disabled = !state.agentEntry;
+}
+
 function renderStatus(status) {
   state.status = status;
   const projectPath = status.project_root || "";
@@ -342,8 +430,9 @@ function renderStatus(status) {
   }
   configureRetrieval(status);
   renderPartitions(status);
-  renderProjects(status);
+  renderProjectTags(status);
   renderLanguages(status);
+  renderAgentEndpoint(status);
   if (hasCapability("generations")) renderGenerations(status.generations || []);
   if (hasCapability("sql_console")) renderSqlConsole(status);
 }
@@ -393,7 +482,10 @@ function renderPartitions(status) {
   );
 }
 
-function renderProjects(status) {
+// The reviewed project tags on the status view, which narrow this project's own
+// corpus. They are not the account's projects: those are the header selector,
+// and a tag on a source is not a project this installation serves.
+function renderProjectTags(status) {
   renderInventory("project-chips", status.projects || [], "project", "project-filter");
 }
 
@@ -764,6 +856,20 @@ async function loadWorkspace({ announce = false } = {}) {
     ]);
     renderStatus(status);
     renderSources(sources);
+    if (hasCapability("projects")) {
+      try {
+        await loadProjects();
+      } catch (error) {
+        toast(error.message, true);
+      }
+    }
+    if (hasCapability("agent_entry")) {
+      try {
+        await loadAgentEntry();
+      } catch (error) {
+        toast(error.message, true);
+      }
+    }
     if (hasCapability("memory")) {
       try {
         await loadMemory();
@@ -1810,6 +1916,20 @@ function initialize() {
   byId("chunk-form").addEventListener("submit", saveChunkExclusion);
   byId("chunk-exclusion-list").addEventListener("click", handleAction);
   byId("context-content").addEventListener("click", handleAction);
+  byId("project-select").addEventListener("change", showProjectActions);
+  byId("project-open").addEventListener("click", () => {
+    const project = selectedProject();
+    if (project?.url) window.open(project.url, "_blank", "noopener");
+  });
+  byId("project-copy-command").addEventListener("click", () => {
+    copyText(byId("project-start-command").textContent, "Start command copied.");
+  });
+  byId("agent-url-copy").addEventListener("click", () => {
+    copyText(byId("agent-url").textContent, "Endpoint copied.");
+  });
+  byId("agent-entry-copy").addEventListener("click", () => {
+    copyText(state.agentEntry, "Client entry copied.");
+  });
   loadWorkspace();
 }
 

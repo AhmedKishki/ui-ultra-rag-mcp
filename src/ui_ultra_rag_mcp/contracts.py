@@ -61,6 +61,16 @@ class UICapabilities:
     # exclusion already exists and a chunk-level control beside it is only
     # meaningful where the server can honour it.
     chunk_exclusion: bool = False
+    # Whether this adapter can list the projects this installation serves and
+    # whether an app is up for each. Off by default: a library cannot know
+    # whether its host serves one project or several, and a selector with no
+    # second project to switch to is a control that cannot act.
+    projects: bool = False
+    # Whether this adapter can produce this project's MCP client entry as text.
+    # Off by default: the entry names the host's own command and its project,
+    # and a library that generated one would be a second place for a client's
+    # configuration to be wrong.
+    agent_entry: bool = False
 
     def as_dict(self) -> dict[str, bool]:
         return asdict(self)
@@ -73,6 +83,12 @@ class UIProfile:
     application_name: str
     project_label: str = "Project"
     project_fallback_name: str = "Knowledge base"
+    # How this host starts one project's workspace, with `{project}` where the
+    # project's name goes. It is the host's own command line, so it is the
+    # host's to supply, and empty removes the block: a project with no app has
+    # no address, and a command this repository invented would be one the
+    # reader could paste and fail on.
+    project_start_command: str = ""
     navigation_label: str = "Knowledge base views"
     source_types_label: str = "document sources"
     ingest_intro: str = (
