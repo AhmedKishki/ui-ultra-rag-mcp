@@ -768,6 +768,10 @@ def test_the_quotation_rule_is_not_a_footer(tmp_path: Path) -> None:
     # profile that sets no footer shows none.
     assert "footer.hidden = !profile.footer_text" in javascript.text
 
+
+def test_every_capability_is_declared_in_the_markup_and_named_in_the_loop(
+    tmp_path: Path,
+) -> None:
     """A control the profile hides must be declared in the markup, not left inert."""
 
     source = tmp_path / "evidence.pdf"

@@ -11,10 +11,14 @@ The `mcp` in the name identifies the interface it is designed to consume; it doe
 ## What it provides
 
 - a basic search-and-sources workspace with no frontend build step;
+- a persistent sidebar that carries the views, with the project named in its footer;
+- a spacing scale and a type scale declared once in CSS, with a max readable width, generous line height, and panels that wrap rather than truncate;
+- a light and a dark scheme built on the same tokens, meeting WCAG AA for body text, labels, and the focus ring in both;
+- print rules that keep a passage and its citation and drop the chrome;
 - status, search, passage context, source listing, and ingestion views;
 - optional metadata editing, source exclusion, source-file access, filters, retrieval modes, reranking, chunk settings, and portable-bundle controls;
 - optional per-query source selection, category-partition, and project-tag filters for servers that support them;
-- an optional settings panel for servers that report their own settings with a value, an origin, and a cost, and an optional chunk-exclusion control beside the existing whole-source one;
+- an optional settings panel that renders each setting's own description, range, choices, and environment variable where the server declares them, alongside its value, origin, and cost, and an optional chunk-exclusion control beside the existing whole-source one;
 - an optional memory view for servers that expose memory scopes, with opt-in writes;
 - an optional SQL console for servers that keep their records in a store a reader may need to read or repair;
 - capability flags so an adapter can hide unsupported actions;
@@ -23,6 +27,16 @@ The `mcp` in the name identifies the interface it is designed to consume; it doe
 - no dependency on FastMCP, UltraRAG internals, or a particular storage layout.
 
 The current normalized document contract uses bibliographic metadata fields (`title`, `authors`, `year`, `doi`, `categories`, and `keywords`). A specialized server remains responsible for validating those values and may disable the metadata controls entirely.
+
+## How the workspace is laid out
+
+Navigation is a vertical sidebar rather than a row of tabs. The same views it held — `Search`, `Sources`, `Config`, `MCP`, and `Memory` — are the sidebar's items, each gated by the same capability the panel is gated by, each carrying an inline SVG icon so the page fetches nothing to draw it. The item in view is marked `aria-current="page"`, the whole column is keyboard operable with a visible focus ring, and the project name sits in a quiet footer beneath the views.
+
+At 992px and wider the column is fixed and always visible. Below it the column becomes a drawer behind a button in the header; Escape and the scrim both close it, and it traps nothing, because a drawer that held the keyboard would be the one place on the page a reader could not leave. The project selector stays in the header where it has always been, and it is given room: a labelled control at pointer height, its note beneath it, and the start command for a project whose app is down on a line of its own instead of crammed beside the selector.
+
+Everything is built on a spacing scale and a type scale declared as CSS custom properties in one `:root` block. No rule carries a hand-picked small value, nothing is smaller than 13px, body text reads at 1.5 and a long description higher than that, prose and settings text carry a max readable width, cards have real internal padding, and a settings row wraps rather than truncating.
+
+The visual vocabulary is UltraRAG's own, because this workspace is the reader's face for a product built on UltraRAG: the neutral surface greys, the three text levels, the subtle `#e5e5e5` border, the 6/12/16 radii, the three shadows, `Inter` for the interface and `JetBrains Mono` for code, and the 576 / 768 / 992 breakpoints are all taken from UltraRAG's design tokens. Two values are not. The accent is violet — `#6b4bb8` in light, `#b9a2ff` in dark — because UltraRAG's accent green `#10a37f` and its accent blue `#2563eb` are its product colours, and borrowing either would imply a relationship this package does not have; violet is far from both and leaves green and amber free for the ready and warning states. And `--text-tertiary` is darkened from UltraRAG's `#9ca3af`, which reaches only 2.54:1 on a card and cannot carry readable text under WCAG AA. Everything else about the upstream stack is deliberately left behind: the workspace is three hand-written static files with no bundler, no framework, and no build step, and `Inter` and `JetBrains Mono` are named with system fallbacks rather than downloaded, because a page that must fetch a font to be legible is not a local tool.
 
 ## How MCP projects use it
 
@@ -90,13 +104,13 @@ A server whose project keeps memory — a standing document plus dated rounds, o
 | `settings` | A **Settings** panel on the status view, listing every setting by section with its value, its origin, and what changing it costs | `settings_read`, `settings_write` |
 | `chunk_exclusion` | An **Exclude this chunk** action on every search hit and every passage of a context dialog, and a **Chunk exclusions** list on the status view with a restore for each row | `list_chunk_exclusions`, `set_chunk_inclusion` |
 | `projects` | A **Projects** selector in the header, beside the project name, listing every project this installation serves and whether an app is up for each | `list_projects` |
-| `agent_entry` | A copyable **Client entry** in the **MCP** tab, the host's own text, for a client that cannot open a socket | `agent_entry` |
+| `agent_entry` | A copyable **Client entry** in the **MCP** view, the host's own text, for a client that cannot open a socket | `agent_entry` |
 
 `clients` is about the host rather than the corpus. A host that serves this workspace and is not a server — a stdio-only process, or a library embedded in one — has no other client to report, so the flag defaults to off and the panel and both routes stay absent. A host that turns it on must implement `list_clients()` and `disconnect_client()` on its adapter; a host that advertises the flag without them is refused with a 501 rather than raising inside the route. `disconnect_client` ends one session, and the client owns its process, so the UI says so next to the action. The write is same-origin JSON, like every other write here.
 
 `generations` is about how the corpus is stored rather than what it contains. The listing is free: it comes from the `generations` entries in the status response, so a host that retains immutable builds shows the panel with no read route of its own. The one operation is `remove_generation`, which takes `generation_id` and a `confirm` that repeats it. The dialog keeps the submit button disabled until the typed id matches, and a generation the host reports as current gets no remove action at all rather than one that would be refused. Nothing here decides which generation a reader may delete: the host's own refusal is shown unchanged, and the shared library only insists that a removal carry the id twice.
 
-Both memory flags off means no tab, no route, and a 404 for every memory request. A
+Both memory flags off means no view, no route, and a 404 for every memory request. A
 **scope** is an opaque identifier the adapter supplies — the UI never invents one, never interprets one, and never resolves a memory path itself. The adapter's `memory_status` decides which scopes exist and what they are called:
 
 ```json
@@ -166,12 +180,14 @@ A server that has settings a reader may want to see can add a **Settings** panel
 
 | Adapter operation | Returns |
 |---|---|
-| `settings_read()` | `{"revision": "…", "sections": [{"key": "retrieval", "title": "Retrieval", "settings": [{"key": "retrieval.rrf_k", "label": "…", "value": 60, "kind": "int", "layer": "…", "origin": "project", "writable": true, "cost": {"level": "regeneration", "message": "…"}}]}], "message": "…"}` |
+| `settings_read()` | `{"revision": "…", "sections": [{"key": "retrieval", "title": "Retrieval", "settings": [{"key": "retrieval.rrf_k", "label": "…", "value": 60, "kind": "int", "layer": "…", "origin": "project", "writable": true, "doc": "…", "minimum": 1, "maximum": 200, "choices": ["hybrid", "bm25"], "env": "ULTRARAG_RRF_K", "cost": {"level": "regeneration", "message": "…"}}]}], "message": "…"}` |
 | `settings_write(values, expected_revision, confirm)` | `{"revision": "…", "changed": ["retrieval.rrf_k"], "requires_ingest": true, "message": "…"}`, or a 400 whose `error` names an unknown setting, a bad value, or a wrong revision |
 
 `settings_read` is reached at `GET /api/settings` and `settings_write` at `POST /api/settings`; both answer 404 while the flag is off, and the write is same-origin JSON like every other write here. The request body and the response are forwarded verbatim, so a key the workspace does not know reaches the server and a refusal reaches the browser unchanged.
 
-The panel draws a field from each setting's `kind`: a boolean is a checkbox, `int` and `float` are number inputs, and anything else is a single-line text input. There is no range and no list of choices, because the contract supplies neither: the value is parsed only as the kind it declares, and the server decides what it will accept. A setting the server reports with `writable: false` — a value that came from the environment or the command line, for instance — is shown disabled with its origin named.
+A row shows six things and gives each of them room: the key's label, the `doc` the server wrote for it, the value the page loaded, the `origin` that value came from, the `cost.message` for changing it, and the control. Where the server declares them, `minimum` and `maximum` become the bounds on a number field, `choices` becomes a select over exactly the values the server offered, and `env` is named as the variable that would override the value in the environment. Every one of those keys is optional. A host that sends none of them draws the same row it drew before, with no blank description line and no control missing its input; a host that sends all of them gets all of them.
+
+The panel draws a field from each setting's `kind`: a boolean is a checkbox, `int` and `float` are number inputs, and anything else is a single-line text input. A range and a list of choices narrow the field where the server declares them and change nothing where it does not; the value is still parsed only as the kind it declares, and the server decides what it will accept. A setting the server reports with `writable: false` — a value that came from the environment or the command line, for instance — is shown disabled with its origin named. A setting the server reports with no value loads an empty control, and leaving that control empty is not sent as a change.
 
 A save sends only the keys whose value differs from what the page loaded, and only a key the page loaded. When any changed key carries a `cost.level` of `regeneration` or `model`, the panel asks first: it names those keys, quotes each one's `cost.message` as the server worded it, and requires the reader to type `ingest`, or `model` when a model change is among them. After a successful write the panel reads the settings again from the returned `revision`, shows the `message`, and — when the reply sets `requires_ingest` — says that an ingestion is needed and names `ingest`. It does not start one: a rebuild is the reader's decision, and the generation in use stays searchable meanwhile.
 
@@ -232,7 +248,7 @@ uv run pytest -q
 uv run ruff check .
 ```
 
-Static HTML, CSS, and JavaScript are packaged inside the Python distribution. There is deliberately no Node.js toolchain.
+Static HTML, CSS, and JavaScript are packaged inside the Python distribution. There is deliberately no Node.js toolchain, and none is needed to read or change the styles: `src/ui_ultra_rag_mcp/static/app.css` opens with a comment naming every token it adopts and the two it departs from, and the spacing and type scales are the first thing in the `:root` block.
 
 ## Security boundary
 

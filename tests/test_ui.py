@@ -1,4 +1,4 @@
-"""The attached-clients view, the SQL console, and the tab bar that holds them.
+"""The clients view, the SQL console, the sidebar that holds them, and its styles.
 
 A host may serve this workspace and still not be a server — a stdio-only process
 has no other client to report — so both the capability and the two routes are off
@@ -12,6 +12,11 @@ scopes it offers and the statements it will run are the adapter's decisions.
 One installation serving several projects is the same case again: the selector
 and the client entry are the host's facts, so both ship behind a flag and neither
 is composed here.
+
+The navigation is a sidebar rather than a strip, and the page is built on a
+spacing and type scale rather than on values typed into each rule. Both are here
+because a reader who cannot see the page described as cramped is not served by an
+assertion about a class name.
 """
 
 from __future__ import annotations
@@ -131,6 +136,11 @@ def _project_host() -> TestClient:
             adapter=ProjectHost(),
         )
     )
+
+
+def client_css() -> str:
+    with _host(ClientControlAdapter()) as client:
+        return client.get("/assets/app.css").text
 
 
 def test_a_host_can_report_its_attached_clients() -> None:
@@ -471,8 +481,9 @@ def test_the_config_tab_carries_the_settings_panel_and_its_confirmation() -> Non
 def test_the_settings_panel_reads_the_shape_the_server_sends() -> None:
     """A field follows the setting's kind, and an unwritable one is disabled.
 
-    There is no range and no list of choices in the contract, so the page parses
-    the value as its kind and leaves the decision to the server.
+    A range or a list of choices narrows the field when the server declares one
+    and changes nothing when it does not; the value is still parsed as its kind
+    and the decision stays the server's.
     """
 
     with _panel_host() as client:
@@ -484,8 +495,12 @@ def test_the_settings_panel_reads_the_shape_the_server_sends() -> None:
     assert "control.disabled = !setting.writable" in script
     assert "Set by ${setting.origin" in script
     assert 'setting.origin || "default"' in script
-    # Only a changed key travels, and only the revision the page loaded.
-    assert "if (parsed !== setting.value) values[key] = parsed;" in script
+    # Only a changed key travels, and only the revision the page loaded. The
+    # comparison is against what the page loaded, not against the string the
+    # value serialises to, so a setting with no value is not always an edit.
+    assert "if (settingChanged(setting, control)) values[key] = parsed;" in script
+    assert "return settingChanged(setting, control);" in script
+    assert "return String(value).trim();" in script
     assert "expected_revision: state.settingsRevision" in script
     # A refused write is shown once and not retried.
     assert "showSettingsResult(result)" in script
@@ -537,10 +552,10 @@ def test_the_workspace_carries_the_chunk_exclusion_controls() -> None:
 
 
 def test_the_tab_bar_is_the_whole_navigation() -> None:
-    """One tab per job, and a tab the host cannot serve is not in the strip.
+    """One nav item per job, and an item the host cannot serve is not in the sidebar.
 
-    A tab is a way into one panel, so every tab carries the capability that
-    decides whether its panel exists, and a tab strip holding no tab is removed
+    A nav item is a way into one panel, so every item carries the capability that
+    decides whether its panel exists, and a sidebar holding no item is removed
     rather than left as a rule above nothing.
     """
 
@@ -548,33 +563,286 @@ def test_the_tab_bar_is_the_whole_navigation() -> None:
         page = client.get("/").text
         script = client.get("/assets/app.js").text
 
-    tabs = re.findall(r'data-view="([^"]+)" data-capability="([^"]+)"', page)
-    assert tabs == [
+    items = re.findall(r'data-view="([^"]+)" data-capability="([^"]+)"', page)
+    assert items == [
         ("search", "documents"),
         ("sources", "sources"),
         ("config", "settings"),
         ("mcp", "clients"),
         ("memory", "memory"),
     ]
-    # Every tab has a panel, and every panel is reached by exactly one tab.
+    # Every item has a panel, and every panel is reached by exactly one item.
     panels = re.findall(r'data-panel="([^"]+)" data-capability="([^"]+)"', page)
-    assert panels == tabs
-    assert 'byId("section-tabs").hidden = !visibleTabs.length' in script
-    # A profile that leaves no tab shows no panel rather than the panel of a tab
-    # that is gone.
-    assert "switchView(activeTab ? activeTab.dataset.view : null);" in script
+    assert panels == items
+    assert 'byId("workspace-nav").hidden = !visibleNavItems.length' in script
+    # A profile that leaves no item shows no panel rather than the panel of an
+    # item that is gone.
+    assert "switchView(activeItem ? activeItem.dataset.view : null);" in script
     # No id is declared twice: a second copy of a panel is a second place for it
     # to be wrong, and a duplicated id would silently pick the first one.
     identifiers = re.findall(r'\bid="([^"]+)"', page)
     assert len(identifiers) == len(set(identifiers))
 
 
-def test_a_host_that_serves_no_panel_leaves_every_tab_out() -> None:
-    """A capability off hides its tab, and no panel is left standing behind it.
+def test_the_sidebar_navigates_without_a_tab_strip() -> None:
+    """Navigation is a vertical column of items, and it says which view is current.
 
-    The strip is the navigation, so a tab that outlived its panel would be a way
-    into a page this host cannot answer, and a profile with nothing on offers no
-    panel rather than the one whose tab happened to be active.
+    A tab strip above the content is what made the page feel crammed, so the
+    navigation is a sidebar: a list of items, each an ordinary button with an
+    inline icon, and `aria-current` marking the one in view.
+    """
+
+    with _host(ClientControlAdapter()) as client:
+        page = client.get("/").text
+        script = client.get("/assets/app.js").text
+
+    assert '<nav id="workspace-nav" class="workspace-sidebar"' in page
+    assert 'data-view="search" data-capability="documents"' in page
+    assert 'class="sidebar-list"' in page
+    # One item per view, and the item is a button rather than a tab role.
+    assert page.count('<button class="nav-item') == 5
+    assert 'role="tab"' not in page
+    assert "aria-selected" not in page
+    # The current view is marked as the current page, and only one is.
+    assert page.count('aria-current="page"') == 1
+    assert (
+        'item.querySelector(".nav-item")?.setAttribute("aria-current", "page")'
+        in script
+    )
+    assert (
+        'else item.querySelector(".nav-item")?.removeAttribute("aria-current")'
+        in script
+    )
+    # The item the markup marks active is the item the profile loop looks for, so
+    # the first view is the one the column shows rather than no view at all.
+    assert 'class="sidebar-item is-active" data-view="search"' in page
+    assert (
+        'const activeItem = visibleNavItems.find((item) => item.classList.contains("is-active"));'
+        in script
+    )
+    # An icon is inline SVG rather than an icon font or a fetched file, so the
+    # page adds no request and no dependency.
+    assert page.count('<svg class="nav-item-icon"') == 5
+    assert "http://" not in page
+    # The column is keyboard operable with a visible focus ring, and the project
+    # is repeated as a quiet footer beneath the views.
+    assert ":focus-visible {" in client_css()
+    assert "outline: 2px solid var(--accent);" in client_css()
+    assert 'class="sidebar-footer"' in page
+    assert 'id="sidebar-project-name" class="sidebar-footer-name"' in page
+    assert 'byId("sidebar-project-name").textContent = projectName' in script
+
+
+def test_the_sidebar_becomes_a_drawer_below_the_large_breakpoint() -> None:
+    """Below 992px the column is a drawer, and it holds nothing against Escape.
+
+    A drawer that trapped focus would be a second keyboard trap in a page that
+    is otherwise operable, so Escape and the scrim both close it.
+    """
+
+    with _host(ClientControlAdapter()) as client:
+        page = client.get("/").text
+        script = client.get("/assets/app.js").text
+    css = client_css()
+
+    assert 'id="nav-toggle"' in page
+    assert 'class="nav-toggle"' in page
+    assert 'aria-expanded="false"' in page
+    assert 'aria-controls="workspace-nav"' in page
+    assert 'id="nav-scrim" class="nav-scrim" hidden' in page
+    # The toggle is hidden while the column is fixed and shown while it is not.
+    assert "@media (max-width: 991.98px) {" in css
+    assert ".nav-toggle {\n  display: none;" in css
+    assert "transform: translateX(-100%);" in css
+    assert ".workspace-sidebar.is-open {\n    transform: none;" in css
+    # Escape closes it and hands the focus back, and no listener holds focus.
+    assert 'if (event.key === "Escape") closeNav({ restoreFocus: true });' in script
+    assert 'addEventListener("keydown"' in script
+    assert "trapFocus" not in script
+    assert 'byId("nav-scrim").addEventListener("click", () => closeNav());' in script
+
+
+def test_the_workspace_declares_a_spacing_and_type_scale() -> None:
+    """Space is a scale rather than a number typed into each rule.
+
+    The complaint was congestion, and ad-hoc small values are what produced it,
+    so the two scales are declared once and named throughout.
+    """
+
+    css = client_css()
+
+    assert ":root {" in css
+    for token in (
+        "--space-3xs",
+        "--space-2xs",
+        "--space-xs",
+        "--space-sm",
+        "--space-md",
+        "--space-lg",
+        "--space-xl",
+        "--text-xs",
+        "--text-sm",
+        "--text-base",
+        "--text-md",
+        "--text-lg",
+        "--text-xl",
+        "--leading-normal",
+        "--leading-prose",
+        "--measure",
+        "--layout-max",
+    ):
+        assert f"{token}:" in css
+    # Body text reads at 1.5 and a long description reads higher than that.
+    assert "--leading-normal: 1.5;" in css
+    assert "--leading-prose: 1.7;" in css
+    assert "body {" in css
+    # A readable measure for prose and for the settings text.
+    assert ".passage-text," in css
+    assert ".setting-doc {" in css
+    assert "max-width: var(--measure);" in css
+    # Nothing clips: a settings row wraps, and a truncated ellipsis is gone.
+    assert ".setting-row {" in css
+    assert "text-overflow: ellipsis;" not in css
+    assert "white-space: nowrap;" in css  # only on the connection state and the select
+    assert ".nav-item {" in css
+    assert "min-height: var(--control-height);" in css
+
+
+def test_the_workspace_reads_in_light_and_dark() -> None:
+    """Both schemes name the same tokens, and the accent is this package's own.
+
+    UltraRAG's surfaces, border, radii, shadows, fonts, and breakpoints are the
+    vocabulary; its accent green and its accent blue are not, because borrowing
+    either would imply a product relationship this package does not have.
+    """
+
+    with _host(ClientControlAdapter()) as client:
+        css = client.get("/assets/app.css").text
+        page = client.get("/").text
+
+    assert "@media (prefers-color-scheme: dark) {" in css
+    assert '<meta name="color-scheme" content="light dark">' in page
+    # Every token the light scheme declares is overridden for the dark one.
+    light, _, dark = css.partition("@media (prefers-color-scheme: dark) {")
+    dark_block = dark.split("\n}\n", 1)[0]
+    for token in (
+        "--bg-body",
+        "--bg-surface",
+        "--bg-sidebar",
+        "--bg-input",
+        "--text-primary",
+        "--text-secondary",
+        "--text-tertiary",
+        "--border-subtle",
+        "--accent",
+    ):
+        assert token in light
+        assert f"{token}:" in dark_block
+    # The surfaces, the border, and the geometry are UltraRAG's own values.
+    for value in (
+        "--bg-body: #ffffff",
+        "--bg-surface: #f9f9fa",
+        "--bg-sidebar: #f5f5f7",
+        "--text-primary: #1a1a1a",
+        "--text-secondary: #6e6e80",
+        "--border-subtle: #e5e5e5",
+        "--radius-sm: 6px",
+        "--radius-md: 12px",
+        "--radius-lg: 16px",
+    ):
+        assert value in light
+    assert '"Inter"' in light
+    assert '"JetBrains Mono"' in light
+    # Neither upstream product colour is adopted as an accent. The file names
+    # both only to record why they were not taken, so the check is on the
+    # declaration rather than on the whole stylesheet.
+    declarations = "\n".join(
+        line for line in css.splitlines() if line.strip().startswith("--accent")
+    )
+    assert "--accent: #6b4bb8;" in declarations
+    assert "#10a37f" not in declarations
+    assert "#2563eb" not in declarations
+    # The breakpoints are the ones UltraRAG declares.
+    for breakpoint in ("991.98px", "767.98px", "575.98px"):
+        assert breakpoint in css
+
+
+def test_the_chrome_does_not_print_but_the_passages_do() -> None:
+    """A passage is printed to be transcribed, so the column and header do not."""
+
+    css = client_css()
+
+    assert "@media print {" in css
+    printed = css.split("@media print {", 1)[1]
+    for selector in (".workspace-sidebar", ".site-header", ".nav-toggle", ".nav-scrim"):
+        assert selector in printed
+    assert "display: none !important;" in printed
+    # The evidence itself survives, with its line breaks and its citation.
+    assert ".passage-text," in printed
+    assert "white-space: pre-wrap;" in printed
+
+
+def test_a_settings_row_carries_its_description_value_origin_and_cost() -> None:
+    """A row has room for everything the server said about one setting.
+
+    The description, the range, and the list of choices arrive with the setting
+    and are all optional: a host that sends none of them draws the row it always
+    did, and a host that sends all of them gets all of them.
+    """
+
+    with _panel_host() as client:
+        script = client.get("/assets/app.js").text
+    css = client_css()
+
+    assert 'node("p", "setting-doc", inlineText(setting.doc))' in script
+    assert "settingValueLabel(setting.value)" in script
+    assert 'setting.origin || "default"' in script
+    assert "cost.message" in script
+    # A range becomes the field's own bounds, and a list becomes a select over
+    # exactly the values the server offered.
+    assert "control.min = String(setting.minimum)" in script
+    assert "control.max = String(setting.maximum)" in script
+    assert 'node("select", "setting-input setting-select")' in script
+    assert 'node("option", "", settingValueLabel(choice))' in script
+    # The variable that would override the value is named beside it.
+    assert "setting.env" in script
+    assert "overrides this value" in script
+    # Every field except a checkbox and a bool keeps the control its kind names,
+    # and an unwritable one stays disabled.
+    assert 'control.type = "checkbox"' in script
+    assert 'control.type = "number"' in script
+    assert 'control.type = "text"' in script
+    assert "control.disabled = !setting.writable" in script
+    # The row is a grid that wraps rather than one that truncates.
+    assert ".setting-row {" in css
+    assert "grid-template-columns: minmax(0, 1fr) minmax(0, 15rem);" in css
+    assert ".setting-doc {" in css
+
+
+def test_a_host_that_sends_no_setting_details_is_drawn_as_before() -> None:
+    """An optional key that is absent leaves no blank row and no broken control."""
+
+    with _panel_host() as client:
+        script = client.get("/assets/app.js").text
+
+    # Every one of them is guarded, so a host sending none still renders.
+    assert "if (setting.doc) field.append" in script
+    assert "if (cost.message) {" in script
+    assert "if (setting.env) {" in script
+    assert 'if (!choices.length || kind === "bool") return null;' in script
+    # A missing range leaves no min and no max attribute.
+    assert "if (setting.minimum !== undefined && setting.minimum !== null)" in script
+    # A value the page did not load is still drawn, as the key with no value.
+    assert "settingValueLabel(value)" in script
+    assert 'return "none";' in script
+
+
+def test_a_host_that_serves_no_panel_leaves_every_nav_item_out() -> None:
+    """A capability off hides its nav item, and no panel is left standing behind it.
+
+    The sidebar is the navigation, so an item that outlived its panel would be a
+    way into a page this host cannot answer, and a profile with nothing on offers
+    no panel rather than the one whose item happened to be active.
     """
 
     adapter = ClientControlAdapter()
@@ -601,7 +869,7 @@ def test_a_host_that_serves_no_panel_leaves_every_tab_out() -> None:
     for capability in ("documents", "sources", "settings", "clients", "memory"):
         assert capabilities[capability] is False
     # Every panel and the status summary are gated on the same capabilities the
-    # tabs are, so nothing this host cannot answer has a way in.
+    # nav items are, so nothing this host cannot answer has a way in.
     for panel, capability in (
         ("search", "documents"),
         ("sources", "sources"),
@@ -611,12 +879,15 @@ def test_a_host_that_serves_no_panel_leaves_every_tab_out() -> None:
     ):
         assert f'data-panel="{panel}" data-capability="{capability}"' in page
     assert 'class="system-summary" data-capability="documents"' in page
-    # The loop that hides by capability is the only thing that decides a tab, and
-    # what it leaves is handled rather than ignored.
+    # The loop that hides by capability is the only thing that decides an item,
+    # and what it leaves is handled rather than ignored.
     hide = script.split("function applyProfile(")[1].split("\n}\n")[0]
     assert "element.hidden = !hasCapability(element.dataset.capability);" in hide
-    assert "switchView(activeTab ? activeTab.dataset.view : null);" in hide
-    assert 'byId("section-tabs").hidden = !visibleTabs.length;' in hide
+    assert "switchView(activeItem ? activeItem.dataset.view : null);" in hide
+    assert 'byId("workspace-nav").hidden = !visibleNavItems.length;' in hide
+    # A column with nothing in it is removed, and the button that opens it goes
+    # with the column rather than opening an empty drawer.
+    assert 'byId("nav-toggle").hidden = !visibleNavItems.length;' in hide
 
 
 def test_the_header_carries_a_projects_selector_the_host_supplies() -> None:

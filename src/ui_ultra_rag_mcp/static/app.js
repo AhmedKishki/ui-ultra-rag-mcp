@@ -31,7 +31,8 @@ function applyProfile(profile) {
   document.title = profile.application_name;
   byId("application-name").textContent = profile.application_name;
   byId("project-label").textContent = profile.project_label;
-  byId("section-tabs").setAttribute("aria-label", profile.navigation_label);
+  byId("workspace-nav").setAttribute("aria-label", profile.navigation_label);
+  byId("sidebar-project-label").textContent = profile.project_label;
   byId("ingest-intro").textContent = profile.ingest_intro;
   // An empty footer removes the element rather than leaving an empty band: the
   // quotation rule belongs in the documentation, not in every view.
@@ -50,16 +51,17 @@ function applyProfile(profile) {
   document.querySelectorAll("[data-capability]").forEach((element) => {
     element.hidden = !hasCapability(element.dataset.capability);
   });
-  const visibleTabs = [...document.querySelectorAll(".tab-button")].filter(
-    (tab) => !tab.hidden,
+  const visibleNavItems = [...document.querySelectorAll(".sidebar-item")].filter(
+    (item) => !item.hidden,
   );
-  // A tab is one panel's way in, so a strip holding no tab is a rule above
-  // nothing and goes with them. The active tab is chosen from the tabs that
+  // A nav item is one panel's way in, so a sidebar holding none is a rule above
+  // nothing and goes with them. The active view is chosen from the items that
   // survived the profile, and a profile that leaves none shows no panel at all
-  // rather than the panel of a tab that is gone.
-  byId("section-tabs").hidden = !visibleTabs.length;
-  const activeTab = visibleTabs.find((tab) => tab.classList.contains("is-active"));
-  switchView(activeTab ? activeTab.dataset.view : null);
+  // rather than the panel of an item that is gone.
+  byId("workspace-nav").hidden = !visibleNavItems.length;
+  byId("nav-toggle").hidden = !visibleNavItems.length;
+  const activeItem = visibleNavItems.find((item) => item.classList.contains("is-active"));
+  switchView(activeItem ? activeItem.dataset.view : null);
 }
 
 function node(tag, className, text) {
@@ -363,9 +365,13 @@ async function loadAgentEntry() {
 function renderStatus(status) {
   state.status = status;
   const projectPath = status.project_root || "";
-  byId("project-name").textContent = status.project_name || projectPath.split(/[\\/]/).filter(Boolean).pop()
+  const projectName = status.project_name || projectPath.split(/[\\/]/).filter(Boolean).pop()
     || state.profile?.project_fallback_name
     || "Knowledge base";
+  byId("project-name").textContent = projectName;
+  // The sidebar repeats the project as its quiet footer, so a reader who has
+  // scrolled past the header still knows which project the page serves.
+  byId("sidebar-project-name").textContent = projectName;
   byId("project-path").textContent = projectPath;
   byId("project-path").title = projectPath;
   byId("searchable-count").textContent = formatNumber(
@@ -641,7 +647,7 @@ async function loadMemory() {
   if (!hasCapability("memory")) return;
   const status = await api("/api/memory");
   const scopes = status.scopes || [];
-  byId("memory-tab-count").textContent = String(scopes.length);
+  byId("memory-nav-count").textContent = String(scopes.length);
   const shown = scopes.slice(0, MEMORY_SCOPE_LIMIT);
   const loaded = await Promise.all(
     shown.map((entry) =>
@@ -824,7 +830,7 @@ function excludedCard(source) {
 function renderSources(payload) {
   state.sources = payload.sources || [];
   state.excludedSources = payload.excluded_sources || [];
-  byId("source-tab-count").textContent = String(state.sources.length);
+  byId("source-nav-count").textContent = String(state.sources.length);
   byId("excluded-count").textContent = String(state.excludedSources.length);
 
   const list = byId("source-list");
@@ -903,16 +909,49 @@ async function loadWorkspace({ announce = false } = {}) {
 }
 
 function switchView(name) {
-  document.querySelectorAll(".tab-button").forEach((tab) => {
-    const active = tab.dataset.view === name;
-    tab.classList.toggle("is-active", active);
-    tab.setAttribute("aria-selected", String(active));
+  document.querySelectorAll(".sidebar-item").forEach((item) => {
+    const active = item.dataset.view === name;
+    item.classList.toggle("is-active", active);
+    item.querySelector(".nav-item")?.classList.toggle("is-active", active);
+    // This is navigation rather than a tab set, so the current view is marked
+    // the way a link to the current page is marked.
+    if (active) item.querySelector(".nav-item")?.setAttribute("aria-current", "page");
+    else item.querySelector(".nav-item")?.removeAttribute("aria-current");
   });
   document.querySelectorAll(".view-panel").forEach((panel) => {
     const active = panel.dataset.panel === name;
     panel.classList.toggle("is-active", active);
     panel.hidden = !active;
   });
+  closeNav();
+}
+
+// Below 992px the sidebar is a drawer behind the header button. It traps
+// nothing: Escape and the scrim both close it, and the toggle keeps the focus
+// so a keyboard reader is never lost when it goes.
+function setNav(open) {
+  byId("workspace-nav").classList.toggle("is-open", open);
+  byId("nav-scrim").hidden = !open;
+  byId("nav-toggle").setAttribute("aria-expanded", String(open));
+}
+
+function navIsOpen() {
+  return byId("workspace-nav").classList.contains("is-open");
+}
+
+function closeNav({ restoreFocus = false } = {}) {
+  if (!navIsOpen()) return;
+  setNav(false);
+  if (restoreFocus) byId("nav-toggle").focus();
+}
+
+function toggleNav() {
+  if (navIsOpen()) {
+    closeNav({ restoreFocus: true });
+    return;
+  }
+  setNav(true);
+  byId("workspace-nav").querySelector(".nav-item")?.focus();
 }
 
 function scoreLabel(label, value) {
@@ -1327,11 +1366,17 @@ async function executeSql() {
   }
 }
 
-// A value is parsed only as the kind the server declared: the settings carry no
-// range and no list of choices, so the server remains the authority on what it
-// will accept and its refusal is what the reader sees.
+// A value is parsed only as the kind the server declared. The range and the
+// choices below come from the server too, and only ever narrow what the field
+// offers; what it will accept stays the server's decision and its refusal is
+// what the reader sees.
 function parseSettingValue(kind, raw) {
-  if (kind === "bool") return Boolean(raw);
+  if (kind === "bool") {
+    if (typeof raw === "boolean") return raw;
+    const text = String(raw).trim().toLowerCase();
+    if (["false", "0", "no", "off", ""].includes(text)) return false;
+    return ["true", "1", "yes", "on"].includes(text);
+  }
   const text = String(raw).trim();
   if (kind === "int") return /^-?\d+$/.test(text) ? Number.parseInt(text, 10) : null;
   if (kind === "float") {
@@ -1341,48 +1386,98 @@ function parseSettingValue(kind, raw) {
   return text;
 }
 
-function settingInput(setting) {
-  const control = node("input", "setting-input");
-  control.dataset.settingKey = setting.key;
-  control.dataset.settingKind = setting.kind || "str";
-  if (setting.kind === "bool") {
-    control.type = "checkbox";
-    control.checked = Boolean(setting.value);
-  } else if (setting.kind === "int" || setting.kind === "float") {
-    control.type = "number";
-    control.step = setting.kind === "int" ? "1" : "any";
-    control.value = setting.value === null || setting.value === undefined ? "" : String(setting.value);
-  } else {
-    control.type = "text";
-    control.value = setting.value === null || setting.value === undefined ? "" : String(setting.value);
+function settingValueLabel(value) {
+  if (value === null || value === undefined || value === "") return "none";
+  return String(value);
+}
+
+// The server may declare a list of the values it accepts. Where it does, the
+// field is a select over exactly that list, so a reader cannot type a value the
+// server never offered. Where it declares none, the field stays the plain
+// control for its kind, which is what this page has always drawn.
+function settingChoices(setting, kind) {
+  const choices = Array.isArray(setting.choices) ? setting.choices : [];
+  if (!choices.length || kind === "bool") return null;
+  const control = node("select", "setting-input setting-select");
+  const current = setting.value === null || setting.value === undefined ? "" : String(setting.value);
+  for (const choice of choices) {
+    const option = node("option", "", settingValueLabel(choice));
+    option.value = String(choice);
+    control.append(option);
   }
+  if ([...control.options].some((option) => option.value === current)) control.value = current;
+  else control.selectedIndex = 0;
+  return control;
+}
+
+function settingInput(setting, controlId) {
+  const kind = setting.kind || "str";
+  let control = settingChoices(setting, kind);
+  if (!control) {
+    control = node("input", "setting-input");
+    if (kind === "bool") {
+      control.type = "checkbox";
+      control.checked = Boolean(setting.value);
+    } else if (kind === "int" || kind === "float") {
+      control.type = "number";
+      control.step = kind === "int" ? "1" : "any";
+      control.value = setting.value === null || setting.value === undefined ? "" : String(setting.value);
+      // A range the server declares constrains the field rather than the value:
+      // the browser refuses a key outside it, and the server still decides.
+      if (setting.minimum !== undefined && setting.minimum !== null) control.min = String(setting.minimum);
+      if (setting.maximum !== undefined && setting.maximum !== null) control.max = String(setting.maximum);
+    } else {
+      control.type = "text";
+      control.value = setting.value === null || setting.value === undefined ? "" : String(setting.value);
+    }
+  }
+  control.id = controlId;
+  control.dataset.settingKey = setting.key;
+  control.dataset.settingKind = kind;
   // A setting the server set outside this project arrives read-only, and is
   // shown as it is rather than as an empty box a reader would try to fill.
   control.disabled = !setting.writable;
   return control;
 }
 
-function settingRow(setting) {
-  const row = node("div", "setting-row");
+// A row shows the label, the server's own description, the value the page
+// loaded, where that value came from, what changing it costs, the variable
+// that would override it, and the control. Every one of those is optional: a
+// host that sends none of them draws the same row it always did, and a host
+// that sends all of them gets all of them without a truncated line.
+function settingRow(setting, index) {
+  const row = node("article", "setting-row");
+  const controlId = `setting-control-${index}`;
+  const control = settingInput(setting, controlId);
+
   const field = node("label", "setting-field");
-  const label = node("span", "field-label", setting.label || setting.key);
-  label.append(node("small", "setting-key", setting.key));
-  field.append(label, settingInput(setting));
+  field.htmlFor = controlId;
+  field.append(node("span", "field-label setting-label", setting.label || setting.key));
+  field.append(node("span", "setting-key", setting.key));
+  if (setting.doc) field.append(node("p", "setting-doc", inlineText(setting.doc)));
   row.append(field);
 
-  const detail = node("div", "setting-detail");
-  detail.append(node("span", "locator-badge setting-origin", setting.origin || "default"));
+  const facts = node("div", "setting-facts");
+  facts.append(node("span", "setting-fact setting-value", `Value: ${settingValueLabel(setting.value)}`));
+  facts.append(node("span", "locator-badge setting-origin", setting.origin || "default"));
   const cost = setting.cost || {};
   if (cost.message) {
-    const className = cost.level === "model" ? "setting-cost setting-cost-model" : "setting-cost";
-    detail.append(node("span", className, cost.message));
+    const className = cost.level === "model" ? "setting-fact setting-cost setting-cost-model" : "setting-fact setting-cost";
+    facts.append(node("span", className, cost.message));
+  }
+  if (setting.env) {
+    facts.append(node("span", "setting-fact setting-env", `${setting.env} overrides this value`));
   }
   if (!setting.writable) {
-    detail.append(
-      node("span", "setting-readonly", `Set by ${setting.origin || "the server"}; edit it there.`),
+    facts.append(
+      node("span", "setting-fact setting-readonly", `Set by ${setting.origin || "the server"}; edit it there.`),
     );
   }
-  row.append(detail);
+  row.append(facts);
+
+  const holder = node("div", "setting-control");
+  holder.append(control);
+  row.append(holder);
   return row;
 }
 
@@ -1394,10 +1489,12 @@ function renderSettings(payload) {
   for (const section of payload.sections || []) {
     const block = node("section", "settings-section");
     block.append(node("h4", "", section.title || section.key));
+    let index = 0;
     for (const setting of section.settings || []) {
       if (!setting?.key) continue;
       state.settings.set(setting.key, setting);
-      block.append(settingRow(setting));
+      block.append(settingRow(setting, `${index}-${slugify(setting.key)}`));
+      index += 1;
     }
     container.append(block);
   }
@@ -1405,6 +1502,10 @@ function renderSettings(payload) {
   message.hidden = !payload.message;
   message.textContent = payload.message || "";
   syncSettingsSubmit();
+}
+
+function slugify(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "setting";
 }
 
 function settingsControls() {
@@ -1415,13 +1516,28 @@ function controlValue(control) {
   return control.type === "checkbox" ? control.checked : control.value.trim();
 }
 
+// What the page loaded, as the control itself shows it. A setting the server
+// reports with no value loads an empty control, so leaving that control empty
+// is not a change to send: comparing the box against the string "null" would
+// make every valueless setting look edited and leave Save live for ever.
+function loadedSettingText(setting) {
+  const value = setting.value;
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+function settingChanged(setting, control) {
+  if (control.type === "checkbox") return control.checked !== Boolean(setting.value);
+  return String(controlValue(control)) !== loadedSettingText(setting);
+}
+
 function settingsDirty() {
   // A setting the page never loaded is not compared and not sent, because the
   // revision a write carries was computed against the values shown here.
   return settingsControls().some((control) => {
     const setting = state.settings.get(control.dataset.settingKey);
     if (!setting || !setting.writable) return false;
-    return String(controlValue(control)) !== String(setting.value);
+    return settingChanged(setting, control);
   });
 }
 
@@ -1440,7 +1556,7 @@ function changedSettings() {
       toast(`${key} must be a ${control.dataset.settingKind} value.`, true);
       return null;
     }
-    if (parsed !== setting.value) values[key] = parsed;
+    if (settingChanged(setting, control)) values[key] = parsed;
   }
   return values;
 }
@@ -1867,9 +1983,19 @@ function filterSources(event) {
 
 function initialize() {
   state.hits = new Map();
-  document.querySelectorAll(".tab-button").forEach((tab) => {
-    tab.addEventListener("click", () => switchView(tab.dataset.view));
+  document.querySelectorAll(".sidebar-item").forEach((item) => {
+    item.querySelector(".nav-item")?.addEventListener("click", () => {
+      switchView(item.dataset.view);
+    });
   });
+  byId("nav-toggle").addEventListener("click", toggleNav);
+  byId("nav-scrim").addEventListener("click", () => closeNav());
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeNav({ restoreFocus: true });
+  });
+  // Widening past the breakpoint turns the drawer back into a fixed column, so
+  // it is left closed rather than reopening itself over the page.
+  window.matchMedia("(min-width: 992px)").addEventListener("change", () => closeNav());
   document.querySelectorAll("dialog").forEach((dialog) => {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
@@ -1906,6 +2032,9 @@ function initialize() {
   byId("sql-statement").addEventListener("input", syncSqlControls);
   byId("settings-form").addEventListener("submit", saveSettings);
   byId("settings-sections").addEventListener("input", syncSettingsSubmit);
+  // A select reports a chosen value on change; without this the submit gate
+  // would stay closed on a setting the server drew as a list of choices.
+  byId("settings-sections").addEventListener("change", syncSettingsSubmit);
   byId("settings-reload").addEventListener("click", reloadSettings);
   byId("settings-confirm-form").addEventListener("submit", confirmSettings);
   byId("settings-confirm-word").addEventListener("input", (event) => {
