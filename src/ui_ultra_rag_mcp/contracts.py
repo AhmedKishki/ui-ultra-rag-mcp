@@ -42,6 +42,11 @@ class UICapabilities:
     # process serving it. Off by default: a library cannot know whether the host
     # is a server at all, and a memory-only server has no corpus clients.
     clients: bool = False
+    # Whether this adapter can list the generations it retains and delete one.
+    # The listing arrives in the status payload and is rendered for free; only
+    # the removal needs a route, so the flag gates a panel that would otherwise
+    # be a set of chips and a button that cannot act.
+    generations: bool = False
 
     def as_dict(self) -> dict[str, bool]:
         return asdict(self)

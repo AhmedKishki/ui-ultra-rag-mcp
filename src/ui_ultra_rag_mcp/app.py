@@ -38,6 +38,7 @@ _OPERATION_CAPABILITY = {
     "ingest": "ingestion",
     "set_source_metadata": "metadata",
     "set_source_inclusion": "source_inclusion",
+    "remove_generation": "generations",
     "export_bundle": "bundle_export",
     "import_bundle": "bundle_import",
     "memory_status": "memory",
@@ -307,6 +308,29 @@ async def _set_inclusion(request: Request) -> Response:
     return JSONResponse(await _adapter_call(request, "set_source_inclusion", body))
 
 
+async def _remove_generation(request: Request) -> Response:
+    """Delete one retained generation, which is the only way a generation leaves."""
+
+    body = await _json_body(request)
+    allowed = {"generation_id", "confirm"}
+    unknown = set(body) - allowed
+    if unknown or not {"generation_id", "confirm"}.issubset(body):
+        # The confirmation is required rather than defaulted. A host that
+        # supplied its own default would be a host where a click removed a
+        # generation nobody chose, which is the one thing this dialog exists to
+        # prevent.
+        raise HTTPException(
+            status_code=400,
+            detail="Generation removal requires generation_id and confirm",
+        )
+    if body["confirm"] != body["generation_id"]:
+        raise HTTPException(
+            status_code=400,
+            detail="The confirmation must repeat the generation_id",
+        )
+    return JSONResponse(await _adapter_call(request, "remove_generation", body))
+
+
 async def _export_bundle(request: Request) -> Response:
     body = await _json_body(request)
     if body:
@@ -561,6 +585,7 @@ def create_ui_app(
         Route("/api/ingest", _ingest, methods=["POST"]),
         Route("/api/source-metadata", _set_metadata, methods=["POST"]),
         Route("/api/source-inclusion", _set_inclusion, methods=["POST"]),
+        Route("/api/generations/remove", _remove_generation, methods=["POST"]),
         Route("/api/bundles/export", _export_bundle, methods=["POST"]),
         Route("/api/bundles/import", _import_bundle, methods=["POST"]),
         Route("/api/clients", _clients),

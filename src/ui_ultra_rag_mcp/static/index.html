@@ -261,6 +261,12 @@
           <div id="language-chips" class="partition-chips"></div>
         </div>
 
+        <div id="generation-summary" class="partition-summary" data-capability="generations" hidden>
+          <h3>Generations</h3>
+          <p class="form-note">Every successful build of this corpus, and the one a search reads now. Removing one frees its space and cannot be undone; the original sources are not touched, and rebuilding costs one ingestion.</p>
+          <div id="generation-chips" class="partition-chips"></div>
+        </div>
+
         <div id="client-summary" class="partition-summary" data-capability="clients" hidden>
           <h3>Attached clients</h3>
           <p class="form-note">Agents connected to this app over MCP. Disconnecting one ends its session; the client owns the process and decides whether to come back.</p>
@@ -371,6 +377,26 @@
         <div class="dialog-actions">
           <button class="button button-quiet dialog-close" type="button">Cancel</button>
           <button id="exclusion-submit" class="button button-danger" type="submit">Exclude source</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="generation-dialog" class="dialog">
+      <form id="generation-form" method="dialog">
+        <div class="dialog-header">
+          <h2>Remove this generation?</h2>
+          <button class="icon-button dialog-close" type="button" aria-label="Close">×</button>
+        </div>
+        <input id="generation-remove-id" type="hidden">
+        <p id="generation-remove-name" class="dialog-source-name"></p>
+        <label for="generation-confirm">
+          <span class="field-label">Type the id to confirm</span>
+          <input id="generation-confirm" type="text" autocomplete="off" required placeholder="20260930T191235Z-45608dc5">
+          <small>Removal is permanent. The search index, the passages, and the vectors are deleted; the original sources are not, and rebuilding costs one ingestion.</small>
+        </label>
+        <div class="dialog-actions">
+          <button class="button button-quiet dialog-close" type="button">Cancel</button>
+          <button id="generation-submit" class="button button-danger" type="submit" disabled>Remove generation</button>
         </div>
       </form>
     </dialog>

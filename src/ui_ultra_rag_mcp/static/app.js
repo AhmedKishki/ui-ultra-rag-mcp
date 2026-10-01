@@ -335,6 +335,7 @@ function renderStatus(status) {
   renderPartitions(status);
   renderProjects(status);
   renderLanguages(status);
+  if (hasCapability("generations")) renderGenerations(status.generations || []);
 }
 
 function tagList(values, className = "tag") {
@@ -974,6 +975,84 @@ function openExclusion(documentId) {
   byId("exclusion-dialog").showModal();
 }
 
+function bytes(count) {
+  if (typeof count !== "number" || !Number.isFinite(count)) return "";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = count;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`;
+}
+
+function renderGenerations(generations) {
+  const container = byId("generation-chips");
+  container.replaceChildren();
+  if (!generations.length) {
+    container.append(node("p", "form-note", "This project has no build yet."));
+    return;
+  }
+  for (const generation of generations) {
+    const chip = node("div", "partition-chip");
+    chip.append(
+      node("span", "partition-chip-label", generation.generation_id),
+      node(
+        "span",
+        "partition-chip-count",
+        generation.is_current
+          ? "in use"
+          : `${bytes(generation.size_bytes)} · ${generation.chunk_count} passages`,
+      ),
+    );
+    // The one a search reads cannot be removed, so the action is not offered
+    // rather than offered and refused: a button that always fails is a button
+    // that teaches a reader to click through the answers.
+    if (!generation.is_current) {
+      const drop = node("button", "text-button", "Remove");
+      drop.type = "button";
+      drop.addEventListener("click", () => openGenerationRemoval(generation.generation_id));
+      chip.append(drop);
+    }
+    if (generation.manifest_error) {
+      chip.append(node("span", "partition-chip-count", "manifest unreadable"));
+    }
+    container.append(chip);
+  }
+}
+
+function openGenerationRemoval(generationId) {
+  byId("generation-remove-id").value = generationId;
+  byId("generation-remove-name").textContent = generationId;
+  byId("generation-confirm").value = "";
+  byId("generation-submit").disabled = true;
+  byId("generation-dialog").showModal();
+}
+
+async function removeGeneration(event) {
+  event.preventDefault();
+  const generationId = byId("generation-remove-id").value;
+  if (byId("generation-confirm").value.trim() !== generationId) {
+    toast("The typed id does not match the generation.", true);
+    return;
+  }
+  setBusy(true, "Removing the generation…");
+  try {
+    const result = await api("/api/generations/remove", {
+      method: "POST",
+      body: JSON.stringify({ generation_id: generationId, confirm: generationId }),
+    });
+    byId("generation-dialog").close();
+    toast(result.message || "Generation removed.");
+    await loadWorkspace();
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function saveMetadata(event) {
   event.preventDefault();
   const yearText = byId("metadata-year").value.trim();
@@ -1199,6 +1278,11 @@ function initialize() {
   byId("partition-chips").addEventListener("click", handleAction);
   byId("project-chips").addEventListener("click", handleAction);
   byId("excluded-list").addEventListener("click", handleAction);
+  byId("generation-form").addEventListener("submit", removeGeneration);
+  byId("generation-confirm").addEventListener("input", (event) => {
+    byId("generation-submit").disabled =
+      event.target.value.trim() !== byId("generation-remove-id").value;
+  });
   loadWorkspace();
 }
 

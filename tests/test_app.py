@@ -63,6 +63,11 @@ class FakeAdapter:
             "ingest": {"generation_id": "generation-2", "chunk_count": 2},
             "set_source_metadata": {"requires_ingest": True},
             "set_source_inclusion": {"included": arguments.get("included")},
+            "remove_generation": {
+                "status": "removed",
+                "generation_id": arguments.get("generation_id"),
+                "freed_bytes": 1024,
+            },
             "export_bundle": {
                 "bundle_name": "project-generation.research-rag.zip",
                 "sha256": "abc",
@@ -362,6 +367,7 @@ def test_disabled_capabilities_are_reported_and_enforced(tmp_path: Path) -> None
         retrieval_modes=False,
         reranking=False,
         chunk_settings=False,
+        generations=False,
     )
     app = create_ui_app(profile=profile, adapter=FakeAdapter(source))
 
@@ -862,3 +868,91 @@ def test_package_version_matches_pyproject() -> None:
     with pyproject.open("rb") as handle:
         expected = tomllib.load(handle)["project"]["version"]
     assert ui_ultra_rag_mcp.__version__ == expected
+
+
+def test_a_generation_is_removed_only_with_a_matching_confirmation(
+    tmp_path: Path,
+) -> None:
+    """The dialog's typed id reaches the adapter, and a mismatch never does.
+
+    A host that supplied its own confirmation would be a host where one click
+    removed a generation nobody chose, which is the only thing the dialog is for.
+    """
+
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    adapter = FakeAdapter(source)
+    app = create_ui_app(profile=_profile(generations=True), adapter=adapter)
+    generation_id = "20260930T191235Z-45608dc5"
+
+    with TestClient(app) as client:
+        assert client.get("/api/ui").json()["capabilities"]["generations"] is True
+        removed = client.post(
+            "/api/generations/remove",
+            json={"generation_id": generation_id, "confirm": generation_id},
+        )
+        assert removed.status_code == 200
+        assert (
+            "remove_generation",
+            {"generation_id": generation_id, "confirm": generation_id},
+        ) in adapter.calls
+
+        for body, expected in (
+            ({"generation_id": generation_id, "confirm": "nope"}, "repeat"),
+            ({"generation_id": generation_id}, "generation_id and confirm"),
+            (
+                {"generation_id": generation_id, "confirm": generation_id, "x": 1},
+                "generation_id and confirm",
+            ),
+        ):
+            refused = client.post("/api/generations/remove", json=body)
+            assert refused.status_code == 400
+            assert expected in refused.json()["error"]
+
+    # Every refusal happened in the workspace, so the adapter saw one call.
+    assert [name for name, _ in adapter.calls] == ["remove_generation"]
+
+
+def test_a_generation_cannot_be_removed_where_the_capability_is_off(
+    tmp_path: Path,
+) -> None:
+    """A panel that shows chips and a button is not shown without a way to act."""
+
+    source = tmp_path / "evidence.pdf"
+    source.write_bytes(b"%PDF-1.4\n% test\n")
+    adapter = FakeAdapter(source)
+    app = create_ui_app(profile=_profile(generations=False), adapter=adapter)
+    generation_id = "20260930T191235Z-45608dc5"
+
+    with TestClient(app) as client:
+        assert client.get("/api/ui").json()["capabilities"]["generations"] is False
+        refused = client.post(
+            "/api/generations/remove",
+            json={"generation_id": generation_id, "confirm": generation_id},
+        )
+
+    assert refused.status_code == 404
+    assert adapter.calls == []
+
+
+def test_the_status_view_carries_the_generation_panel_and_its_dialog() -> None:
+    """The listing is free in the status payload, so the panel needs only markup."""
+
+    app = create_ui_app(profile=_profile(), adapter=FakeAdapter(Path("evidence.pdf")))
+
+    with TestClient(app) as client:
+        page = client.get("/").text
+        javascript = client.get("/assets/app.js").text
+
+    assert 'id="generation-chips"' in page
+    assert 'data-capability="generations"' in page
+    assert 'id="generation-dialog"' in page
+    # The remove button stays disabled until the typed id matches, so the
+    # confirmation is a gate rather than a message.
+    assert 'id="generation-submit"' in page and "disabled" in page
+    assert 'hasCapability("generations")' in javascript
+    assert "renderGenerations(status.generations || [])" in javascript
+    assert 'byId("generation-confirm").addEventListener' in javascript
+    assert "/api/generations/remove" in javascript
+    # The one a search reads is not offered a removal it would only refuse.
+    assert "if (!generation.is_current)" in javascript
