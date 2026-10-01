@@ -11,6 +11,10 @@ const state = {
   standingScope: null,
   busy: false,
   forceRecompute: false,
+  settingsRevision: "",
+  settings: new Map(),
+  chunkExclusions: new Map(),
+  pendingSettings: null,
 };
 
 const byId = (id) => document.getElementById(id);
@@ -149,6 +153,8 @@ function setBusy(active, message = "Working…") {
   // The run button is a submit, so re-enabling every submit above would leave it
   // live with nothing typed in it. Its own gate is the scope and the statement.
   syncSqlControls();
+  // The same applies to the settings submit: its gate is a changed value.
+  syncSettingsSubmit();
 }
 
 function toast(message, isError = false) {
@@ -765,6 +771,20 @@ async function loadWorkspace({ announce = false } = {}) {
         toast(error.message, true);
       }
     }
+    if (hasCapability("chunk_exclusion")) {
+      try {
+        await loadChunkExclusions();
+      } catch (error) {
+        toast(error.message, true);
+      }
+    }
+    if (hasCapability("settings")) {
+      try {
+        await loadSettings();
+      } catch (error) {
+        toast(error.message, true);
+      }
+    }
     setConnection("ready", "Local · ready");
     if (announce) toast("Workspace refreshed.");
   } catch (error) {
@@ -823,6 +843,9 @@ function resultCard(hit) {
   actions.append(button("Copy citation", "copy-citation", hit.chunk_id));
   if (hasCapability("passage_context")) {
     actions.append(button("Nearby context", "show-context", hit.chunk_id));
+  }
+  if (hasCapability("chunk_exclusion")) {
+    actions.append(chunkAction(hit));
   }
   const source = sourceForDocument(hit.document_id);
   if (source && hasCapability("source_files")) {
@@ -943,6 +966,9 @@ async function showContext(chunkId) {
       citation.append(node("span", "", inlineText(passage.citation)));
       citation.append(node("span", "locator-badge", locatorLabel(passage.locator)));
       item.append(citation, node("p", "", readableText(passage.text)));
+      if (hasCapability("chunk_exclusion")) {
+        item.append(chunkAction(passage));
+      }
       container.append(item);
     });
     if (!container.children.length) container.append(node("div", "no-records", "No context was returned."));
@@ -1195,6 +1221,348 @@ async function executeSql() {
   }
 }
 
+// A value is parsed only as the kind the server declared: the settings carry no
+// range and no list of choices, so the server remains the authority on what it
+// will accept and its refusal is what the reader sees.
+function parseSettingValue(kind, raw) {
+  if (kind === "bool") return Boolean(raw);
+  const text = String(raw).trim();
+  if (kind === "int") return /^-?\d+$/.test(text) ? Number.parseInt(text, 10) : null;
+  if (kind === "float") {
+    const parsed = Number.parseFloat(text);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return text;
+}
+
+function settingInput(setting) {
+  const control = node("input", "setting-input");
+  control.dataset.settingKey = setting.key;
+  control.dataset.settingKind = setting.kind || "str";
+  if (setting.kind === "bool") {
+    control.type = "checkbox";
+    control.checked = Boolean(setting.value);
+  } else if (setting.kind === "int" || setting.kind === "float") {
+    control.type = "number";
+    control.step = setting.kind === "int" ? "1" : "any";
+    control.value = setting.value === null || setting.value === undefined ? "" : String(setting.value);
+  } else {
+    control.type = "text";
+    control.value = setting.value === null || setting.value === undefined ? "" : String(setting.value);
+  }
+  // A setting the server set outside this project arrives read-only, and is
+  // shown as it is rather than as an empty box a reader would try to fill.
+  control.disabled = !setting.writable;
+  return control;
+}
+
+function settingRow(setting) {
+  const row = node("div", "setting-row");
+  const field = node("label", "setting-field");
+  const label = node("span", "field-label", setting.label || setting.key);
+  label.append(node("small", "setting-key", setting.key));
+  field.append(label, settingInput(setting));
+  row.append(field);
+
+  const detail = node("div", "setting-detail");
+  detail.append(node("span", "locator-badge setting-origin", setting.origin || "default"));
+  const cost = setting.cost || {};
+  if (cost.message) {
+    const className = cost.level === "model" ? "setting-cost setting-cost-model" : "setting-cost";
+    detail.append(node("span", className, cost.message));
+  }
+  if (!setting.writable) {
+    detail.append(
+      node("span", "setting-readonly", `Set by ${setting.origin || "the server"}; edit it there.`),
+    );
+  }
+  row.append(detail);
+  return row;
+}
+
+function renderSettings(payload) {
+  state.settingsRevision = payload.revision || "";
+  state.settings = new Map();
+  const container = byId("settings-sections");
+  container.replaceChildren();
+  for (const section of payload.sections || []) {
+    const block = node("section", "settings-section");
+    block.append(node("h4", "", section.title || section.key));
+    for (const setting of section.settings || []) {
+      if (!setting?.key) continue;
+      state.settings.set(setting.key, setting);
+      block.append(settingRow(setting));
+    }
+    container.append(block);
+  }
+  const message = byId("settings-message");
+  message.hidden = !payload.message;
+  message.textContent = payload.message || "";
+  syncSettingsSubmit();
+}
+
+function settingsControls() {
+  return [...document.querySelectorAll("#settings-sections [data-setting-key]")];
+}
+
+function controlValue(control) {
+  return control.type === "checkbox" ? control.checked : control.value.trim();
+}
+
+function settingsDirty() {
+  // A setting the page never loaded is not compared and not sent, because the
+  // revision a write carries was computed against the values shown here.
+  return settingsControls().some((control) => {
+    const setting = state.settings.get(control.dataset.settingKey);
+    if (!setting || !setting.writable) return false;
+    return String(controlValue(control)) !== String(setting.value);
+  });
+}
+
+function syncSettingsSubmit() {
+  byId("settings-submit").disabled = !settingsDirty() || state.busy;
+}
+
+function changedSettings() {
+  const values = {};
+  for (const control of settingsControls()) {
+    const key = control.dataset.settingKey;
+    const setting = state.settings.get(key);
+    if (!setting || !setting.writable) continue;
+    const parsed = parseSettingValue(control.dataset.settingKind, controlValue(control));
+    if (parsed === null) {
+      toast(`${key} must be a ${control.dataset.settingKind} value.`, true);
+      return null;
+    }
+    if (parsed !== setting.value) values[key] = parsed;
+  }
+  return values;
+}
+
+function expensiveSettings(values) {
+  // The keys whose change is not free, named from the cost the server reported
+  // for each, so the confirmation quotes the server rather than this page.
+  return Object.keys(values).filter((key) => {
+    const level = state.settings.get(key)?.cost?.level;
+    return level === "regeneration" || level === "model";
+  });
+}
+
+function openSettingsConfirmation(values, keys) {
+  const list = byId("settings-confirm-list");
+  list.replaceChildren();
+  for (const key of keys) {
+    const item = node("li", "");
+    item.append(node("strong", "", key));
+    const message = state.settings.get(key)?.cost?.message;
+    if (message) item.append(document.createTextNode(` — ${message}`));
+    list.append(item);
+  }
+  // A model change is the more expensive one, so it is the word asked for.
+  const word = keys.some((key) => state.settings.get(key)?.cost?.level === "model")
+    ? "model"
+    : "ingest";
+  state.pendingSettings = { values, word };
+  byId("settings-confirm-label").textContent = `Type ${word} to confirm`;
+  byId("settings-confirm-word").value = "";
+  byId("settings-confirm-word").placeholder = word;
+  byId("settings-confirm-submit").disabled = true;
+  byId("settings-confirm-error").hidden = true;
+  byId("settings-confirm-dialog").showModal();
+}
+
+function showSettingsResult(result) {
+  const message = byId("settings-message");
+  message.hidden = false;
+  message.textContent = result.message || "Settings saved.";
+  const notice = byId("settings-notice");
+  notice.hidden = !result.requires_ingest;
+  // A setting that changes what the corpus holds is applied by an ingestion.
+  // The workspace says so and leaves the decision to the reader.
+  notice.textContent = result.requires_ingest
+    ? "These settings apply to the next generation. Run ingest to rebuild it; the generation in use stays searchable until you do."
+    : "";
+}
+
+async function sendSettings(values) {
+  setBusy(true, "Saving the settings…");
+  try {
+    const result = await api("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        values,
+        expected_revision: state.settingsRevision,
+        confirm: true,
+      }),
+    });
+    await loadSettings();
+    showSettingsResult(result);
+  } catch (error) {
+    // The refusal is shown as the server worded it and is not sent again, because
+    // the same revision would only be refused twice.
+    const message = byId("settings-message");
+    message.hidden = false;
+    message.textContent = error.message;
+    byId("settings-notice").hidden = true;
+    toast(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  const values = changedSettings();
+  if (values === null) return;
+  if (!Object.keys(values).length) {
+    toast("No setting was changed.", true);
+    return;
+  }
+  const keys = expensiveSettings(values);
+  if (keys.length) {
+    openSettingsConfirmation(values, keys);
+    return;
+  }
+  await sendSettings(values);
+}
+
+async function confirmSettings(event) {
+  event.preventDefault();
+  const pending = state.pendingSettings;
+  if (!pending) return;
+  if (byId("settings-confirm-word").value.trim() !== pending.word) {
+    const error = byId("settings-confirm-error");
+    error.hidden = false;
+    error.textContent = `Type ${pending.word} to confirm.`;
+    return;
+  }
+  byId("settings-confirm-dialog").close();
+  state.pendingSettings = null;
+  await sendSettings(pending.values);
+}
+
+async function loadSettings() {
+  if (!hasCapability("settings")) return;
+  renderSettings(await api("/api/settings"));
+}
+
+async function reloadSettings() {
+  if (!hasCapability("settings")) return;
+  setBusy(true, "Reading the settings…");
+  try {
+    await loadSettings();
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function chunkExcludeButton(chunk) {
+  const control = button("Exclude this chunk", "exclude-chunk", chunk.chunk_id);
+  control.dataset.chunkSource = chunk.source_relative_path || chunk.source_path || "Unknown source";
+  control.dataset.chunkLocator = chunk.locator ? locatorLabel(chunk.locator) : "No locator reported";
+  return control;
+}
+
+function chunkAction(chunk) {
+  // A chunk the server already lists as excluded is offered a restore instead,
+  // so the reader is never asked to exclude what is already out.
+  return state.chunkExclusions.has(chunk.chunk_id)
+    ? button("Restore this chunk", "restore-chunk", chunk.chunk_id)
+    : chunkExcludeButton(chunk);
+}
+
+function openChunkExclusion(control) {
+  byId("chunk-id").value = control.dataset.value;
+  byId("chunk-name").textContent = `${control.dataset.chunkSource} · ${control.dataset.chunkLocator}`;
+  byId("chunk-reason").value = "";
+  byId("chunk-error").hidden = true;
+  byId("chunk-dialog").showModal();
+}
+
+async function writeChunkInclusion(payload, fromDialog = false) {
+  setBusy(true, payload.included ? "Restoring the chunk…" : "Excluding the chunk…");
+  try {
+    const result = await api("/api/chunk-inclusion", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    if (fromDialog) byId("chunk-dialog").close();
+    toast(result.message || (payload.included ? "Chunk restored." : "Chunk excluded."));
+    clearResults();
+    await loadChunkExclusions();
+  } catch (error) {
+    if (fromDialog) {
+      // The dialog stays open so the refusal is read beside the reason that
+      // caused it, and the same request is not sent again unchanged.
+      const line = byId("chunk-error");
+      line.hidden = false;
+      line.textContent = error.message;
+    } else {
+      toast(error.message, true);
+    }
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function saveChunkExclusion(event) {
+  event.preventDefault();
+  const chunkId = byId("chunk-id").value;
+  const reason = byId("chunk-reason").value.trim();
+  if (!chunkId || !reason) {
+    const line = byId("chunk-error");
+    line.hidden = false;
+    line.textContent = "A reason is required.";
+    return;
+  }
+  await writeChunkInclusion({ chunk_id: chunkId, included: false, reason }, true);
+}
+
+function chunkExclusionCard(entry) {
+  const card = node("article", "excluded-item");
+  const body = node("div");
+  body.append(node("strong", "", entry.source_relative_path || entry.chunk_id));
+  body.append(node("p", "source-path", entry.locator || "No locator reported"));
+  body.append(node("p", "excluded-reason", inlineText(entry.reason) || "No reason recorded"));
+  // A chunk this generation does not hold is named as such, because restoring it
+  // changes the next generation rather than the passages already on screen.
+  body.append(
+    node(
+      "span",
+      "state-badge",
+      entry.in_current_generation === false
+        ? entry.message || "This chunk is not in the current generation."
+        : "Blocked from current search",
+    ),
+  );
+  card.append(body, button("Restore", "restore-chunk", entry.chunk_id));
+  return card;
+}
+
+function renderChunkExclusions(payload) {
+  const entries = payload.exclusions || [];
+  state.chunkExclusions = new Map(entries.map((entry) => [entry.chunk_id, entry]));
+  byId("chunk-exclusion-count").textContent = String(entries.length);
+  const message = byId("chunk-exclusion-message");
+  message.hidden = !payload.message;
+  message.textContent = payload.message || "";
+
+  const list = byId("chunk-exclusion-list");
+  list.replaceChildren();
+  if (!entries.length) {
+    list.append(node("div", "no-records", "No chunk is excluded from retrieval."));
+    return;
+  }
+  entries.forEach((entry) => list.append(chunkExclusionCard(entry)));
+}
+
+async function loadChunkExclusions() {
+  if (!hasCapability("chunk_exclusion")) return;
+  renderChunkExclusions(await api("/api/chunk-exclusions"));
+}
+
 async function saveMetadata(event) {
   event.preventDefault();
   const yearText = byId("metadata-year").value.trim();
@@ -1351,6 +1719,8 @@ function handleAction(event) {
   else if (action === "exclude-source") openExclusion(value);
   else if (action === "restore-source") restoreSource(value);
   else if (action === "show-context") showContext(value);
+  else if (action === "exclude-chunk") openChunkExclusion(target);
+  else if (action === "restore-chunk") writeChunkInclusion({ chunk_id: value, included: true });
   else if (action === "copy-passage") {
     const hit = state.hits.get(value);
     if (hit) copyText(readableText(hit.text), "Semantic text copied.");
@@ -1428,6 +1798,18 @@ function initialize() {
   byId("sql-form").addEventListener("submit", runSql);
   byId("sql-execute-button").addEventListener("click", executeSql);
   byId("sql-statement").addEventListener("input", syncSqlControls);
+  byId("settings-form").addEventListener("submit", saveSettings);
+  byId("settings-sections").addEventListener("input", syncSettingsSubmit);
+  byId("settings-reload").addEventListener("click", reloadSettings);
+  byId("settings-confirm-form").addEventListener("submit", confirmSettings);
+  byId("settings-confirm-word").addEventListener("input", (event) => {
+    const pending = state.pendingSettings;
+    byId("settings-confirm-submit").disabled =
+      !pending || event.target.value.trim() !== pending.word;
+  });
+  byId("chunk-form").addEventListener("submit", saveChunkExclusion);
+  byId("chunk-exclusion-list").addEventListener("click", handleAction);
+  byId("context-content").addEventListener("click", handleAction);
   loadWorkspace();
 }
 

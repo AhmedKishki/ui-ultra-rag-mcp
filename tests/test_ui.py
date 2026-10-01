@@ -304,3 +304,167 @@ def test_the_sql_console_says_when_there_is_no_scope_to_run_against() -> None:
     # button that could only be refused.
     busy = script.split("function setBusy(")[1].split("\n}\n")[0]
     assert "syncSqlControls();" in busy
+
+
+class SettingsHost:
+    """A host that reports two settings: one it can change and one it cannot.
+
+    The second arrives unwritable, the way a value taken from the environment or
+    the command line does, so the panel is drawn against both shapes.
+    """
+
+    async def health(self) -> Mapping[str, Any]:
+        return {"status": "ok"}
+
+    async def call(
+        self, operation: str, arguments: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
+        if operation == "status":
+            return {"ready": True, "project_root": "/p", "project_name": "p"}
+        if operation == "list_sources":
+            return {"ready": True, "source_count": 0, "sources": []}
+        if operation == "settings_read":
+            return {
+                "revision": "rev-1",
+                "sections": [
+                    {
+                        "key": "retrieval",
+                        "title": "Retrieval",
+                        "settings": [
+                            {
+                                "key": "retrieval.rrf_k",
+                                "label": "Reciprocal rank fusion k",
+                                "value": 60,
+                                "kind": "int",
+                                "layer": "retrieval",
+                                "origin": "project",
+                                "writable": True,
+                                "cost": {
+                                    "level": "none",
+                                    "message": "Applies to the next search.",
+                                },
+                            },
+                            {
+                                "key": "retrieval.model",
+                                "label": "Embedding model",
+                                "value": "bge-small",
+                                "kind": "str",
+                                "layer": "retrieval",
+                                "origin": "environment",
+                                "writable": False,
+                                "cost": {
+                                    "level": "model",
+                                    "message": "Re-embeds the corpus.",
+                                },
+                            },
+                        ],
+                    }
+                ],
+                "message": "Settings read.",
+            }
+        if operation == "list_chunk_exclusions":
+            return {"exclusions": [], "message": "No chunk is excluded."}
+        raise UIRequestError(f"Operation {operation!r} is not available", 404)
+
+    async def source_file(self, source_path: str) -> SourceFile:  # pragma: no cover
+        raise UIRequestError("not used")
+
+
+def _panel_host() -> TestClient:
+    return TestClient(
+        create_ui_app(
+            profile=UIProfile(
+                application_name="Settings host",
+                capabilities=UICapabilities(settings=True, chunk_exclusion=True),
+            ),
+            adapter=SettingsHost(),
+        )
+    )
+
+
+def test_the_status_view_carries_the_settings_panel_and_its_confirmation() -> None:
+    """The panel ships hidden and is revealed by the capability, not by a route."""
+
+    with _panel_host() as client:
+        page = client.get("/")
+        script = client.get("/assets/app.js").text
+
+    assert (
+        'id="settings-panel" class="partition-summary" data-capability="settings"'
+        in page.text
+    )
+    for element in ("settings-form", "settings-sections", "settings-submit"):
+        assert f'id="{element}"' in page.text
+    # A change that costs a regeneration is confirmed by a typed word rather than
+    # by a click, so the dialog is part of what the panel ships.
+    assert 'id="settings-confirm-dialog"' in page.text
+    assert 'id="settings-confirm-word"' in page.text
+    assert 'hasCapability("settings")' in script
+
+
+def test_the_settings_panel_reads_the_shape_the_server_sends() -> None:
+    """A field follows the setting's kind, and an unwritable one is disabled.
+
+    There is no range and no list of choices in the contract, so the page parses
+    the value as its kind and leaves the decision to the server.
+    """
+
+    with _panel_host() as client:
+        script = client.get("/assets/app.js").text
+
+    assert 'control.type = "checkbox"' in script
+    assert 'control.type = "number"' in script
+    assert 'control.type = "text"' in script
+    assert "control.disabled = !setting.writable" in script
+    assert "Set by ${setting.origin" in script
+    assert 'setting.origin || "default"' in script
+    # Only a changed key travels, and only the revision the page loaded.
+    assert "if (parsed !== setting.value) values[key] = parsed;" in script
+    assert "expected_revision: state.settingsRevision" in script
+    # A refused write is shown once and not retried.
+    assert "showSettingsResult(result)" in script
+    assert "requires_ingest" in script
+    assert "notice.textContent = result.requires_ingest" in script
+    assert "/api/settings" in script
+
+
+def test_a_costly_settings_change_asks_for_its_word_before_it_is_sent() -> None:
+    """A regeneration or a model change is named, and the typed word is a gate."""
+
+    with _panel_host() as client:
+        script = client.get("/assets/app.js").text
+
+    assert 'return level === "regeneration" || level === "model";' in script
+    assert "cost.message" in script
+    assert '? "model"' in script
+    assert ': "ingest";' in script
+    assert "Type ${word} to confirm" in script
+    gate = script.split('byId("settings-confirm-word").addEventListener')[1]
+    assert "pending.word" in gate
+
+
+def test_the_workspace_carries_the_chunk_exclusion_controls() -> None:
+    """Every hit and every context passage offers the exclusion, and the list restores."""
+
+    with _panel_host() as client:
+        page = client.get("/")
+        script = client.get("/assets/app.js").text
+
+    assert (
+        'id="chunk-exclusion-summary" class="partition-summary"'
+        ' data-capability="chunk_exclusion"' in page.text
+    )
+    assert 'id="chunk-exclusion-list"' in page.text
+    assert 'id="chunk-dialog"' in page.text
+    assert 'id="chunk-error"' in page.text
+    assert 'hasCapability("chunk_exclusion")' in script
+    assert "actions.append(chunkAction(hit))" in script
+    assert "/api/chunk-exclusions" in script
+    assert "/api/chunk-inclusion" in script
+    # A chunk the server already excluded is offered a restore instead.
+    assert "state.chunkExclusions.has(chunk.chunk_id)" in script
+    assert "This chunk is not in the current generation." in script
+    # The whole-source exclusion is a separate control and stays as it was.
+    assert 'id="exclusion-dialog"' in page.text
+    assert 'hasCapability("source_inclusion")' in script
+    assert "/api/source-inclusion" in script

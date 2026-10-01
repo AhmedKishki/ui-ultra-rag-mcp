@@ -125,6 +125,68 @@ class FakeAdapter:
                 "scope": arguments.get("scope"),
                 "sha256": "n3w-digest",
             },
+            "settings_read": {
+                "revision": "rev-1",
+                "sections": [
+                    {
+                        "key": "retrieval",
+                        "title": "Retrieval",
+                        "settings": [
+                            {
+                                "key": "retrieval.rrf_k",
+                                "label": "Reciprocal rank fusion k",
+                                "value": 60,
+                                "kind": "int",
+                                "layer": "retrieval",
+                                "origin": "project",
+                                "writable": True,
+                                "cost": {
+                                    "level": "none",
+                                    "message": "Applies to the next search.",
+                                },
+                            },
+                            {
+                                "key": "retrieval.model",
+                                "label": "Embedding model",
+                                "value": "bge-small",
+                                "kind": "str",
+                                "layer": "retrieval",
+                                "origin": "environment",
+                                "writable": False,
+                                "cost": {
+                                    "level": "model",
+                                    "message": "Re-embeds the corpus.",
+                                },
+                            },
+                        ],
+                    }
+                ],
+                "message": "Settings read.",
+            },
+            "settings_write": {
+                "revision": "rev-2",
+                "changed": sorted(arguments.get("values", {})),
+                "requires_ingest": True,
+                "message": "Settings saved.",
+            },
+            "list_chunk_exclusions": {
+                "exclusions": [
+                    {
+                        "chunk_id": "chunk-9",
+                        "source_relative_path": "essay.pdf",
+                        "locator": "Page 12",
+                        "reason": "Repeats the passage beside it.",
+                        "excluded_at": "2026-10-01T09:00:00Z",
+                        "in_current_generation": True,
+                    }
+                ],
+                "message": "One chunk is excluded.",
+            },
+            "set_chunk_inclusion": {
+                "chunk_id": arguments.get("chunk_id"),
+                "included": arguments.get("included"),
+                "reason": arguments.get("reason"),
+            },
         }
         return responses[operation]
 
@@ -707,6 +769,8 @@ def test_the_quotation_rule_is_not_a_footer(tmp_path: Path) -> None:
         "retrieval_modes",
         "source_selection",
         "sources",
+        "settings",
+        "chunk_exclusion",
     ):
         assert f'data-capability="{capability}"' in page.text
     # The search and ingestion payloads send a capability-gated field only when
@@ -1188,3 +1252,163 @@ def test_a_host_that_advertises_the_sql_console_and_cannot_answer_says_501(
 
     assert response.status_code == 501
     assert "cannot run statements" in response.json()["error"]
+
+
+def test_settings_are_read_and_written_through_the_adapter(tmp_path: Path) -> None:
+    """The panel reads the server's settings and sends back only what changed.
+
+    Nothing here is named or defaulted: the settings, their origins, and the
+    cost of changing them are the server's facts, so both directions travel
+    exactly as they were produced.
+    """
+
+    adapter = FakeAdapter(_source(tmp_path))
+    app = create_ui_app(profile=_profile(settings=True), adapter=adapter)
+
+    with TestClient(app) as client:
+        assert client.get("/api/ui").json()["capabilities"]["settings"] is True
+        read = client.get("/api/settings")
+        written = client.post(
+            "/api/settings",
+            json={
+                "values": {"retrieval.rrf_k": 40},
+                "expected_revision": "rev-1",
+                "confirm": True,
+            },
+        )
+
+    assert read.status_code == 200
+    assert read.json()["revision"] == "rev-1"
+    assert [section["key"] for section in read.json()["sections"]] == ["retrieval"]
+    assert read.json()["sections"][0]["settings"][1]["writable"] is False
+    assert written.status_code == 200
+    assert written.json() == {
+        "revision": "rev-2",
+        "changed": ["retrieval.rrf_k"],
+        "requires_ingest": True,
+        "message": "Settings saved.",
+    }
+    assert ("settings_read", {}) in adapter.calls
+    assert (
+        "settings_write",
+        {
+            "values": {"retrieval.rrf_k": 40},
+            "expected_revision": "rev-1",
+            "confirm": True,
+        },
+    ) in adapter.calls
+
+
+def test_the_settings_routes_are_absent_when_the_capability_is_off(
+    tmp_path: Path,
+) -> None:
+    """A server with no settings panel of its own gets no settings surface."""
+
+    adapter = FakeAdapter(_source(tmp_path))
+    app = create_ui_app(profile=_profile(settings=False), adapter=adapter)
+
+    with TestClient(app) as client:
+        assert client.get("/api/ui").json()["capabilities"]["settings"] is False
+        read = client.get("/api/settings")
+        write = client.post(
+            "/api/settings",
+            json={"values": {"retrieval.rrf_k": 40}, "confirm": True},
+        )
+
+    assert read.status_code == 404
+    assert write.status_code == 404
+    assert adapter.calls == []
+
+
+def test_a_settings_write_is_same_origin_and_json_only(tmp_path: Path) -> None:
+    """Changing a setting changes the server, so it is held to the write rules."""
+
+    adapter = FakeAdapter(_source(tmp_path))
+    body = {"values": {"retrieval.rrf_k": 40}, "expected_revision": "rev-1"}
+
+    with TestClient(
+        create_ui_app(profile=_profile(settings=True), adapter=adapter)
+    ) as client:
+        cross_origin = client.post(
+            "/api/settings", headers={"Origin": "https://example.com"}, json=body
+        )
+        form_encoded = client.post(
+            "/api/settings",
+            content=b"values=%7B%7D",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+    assert cross_origin.status_code == 403
+    assert form_encoded.status_code == 415
+    assert not any(operation == "settings_write" for operation, _ in adapter.calls)
+
+
+def test_chunk_exclusions_are_listed_and_one_chunk_is_set(tmp_path: Path) -> None:
+    adapter = FakeAdapter(_source(tmp_path))
+    app = create_ui_app(profile=_profile(chunk_exclusion=True), adapter=adapter)
+
+    with TestClient(app) as client:
+        assert client.get("/api/ui").json()["capabilities"]["chunk_exclusion"] is True
+        listed = client.get("/api/chunk-exclusions")
+        excluded = client.post(
+            "/api/chunk-inclusion",
+            json={
+                "chunk_id": "chunk-9",
+                "included": False,
+                "reason": "Repeats the passage beside it.",
+            },
+        )
+        restored = client.post(
+            "/api/chunk-inclusion",
+            json={"chunk_id": "chunk-9", "included": True},
+        )
+
+    assert listed.status_code == 200
+    assert listed.json()["exclusions"][0]["chunk_id"] == "chunk-9"
+    assert excluded.json()["included"] is False
+    # A restore carries no reason: the server has nothing to record for it.
+    assert restored.json() == {
+        "chunk_id": "chunk-9",
+        "included": True,
+        "reason": None,
+    }
+    assert ("list_chunk_exclusions", {}) in adapter.calls
+
+
+def test_the_chunk_routes_are_absent_when_the_capability_is_off(tmp_path: Path) -> None:
+    adapter = FakeAdapter(_source(tmp_path))
+    app = create_ui_app(profile=_profile(chunk_exclusion=False), adapter=adapter)
+
+    with TestClient(app) as client:
+        assert client.get("/api/ui").json()["capabilities"]["chunk_exclusion"] is False
+        listed = client.get("/api/chunk-exclusions")
+        excluded = client.post(
+            "/api/chunk-inclusion",
+            json={"chunk_id": "chunk-9", "included": False, "reason": "why"},
+        )
+
+    assert listed.status_code == 404
+    assert excluded.status_code == 404
+    assert adapter.calls == []
+
+
+def test_a_chunk_inclusion_write_is_same_origin_and_json_only(
+    tmp_path: Path,
+) -> None:
+    adapter = FakeAdapter(_source(tmp_path))
+    body = {"chunk_id": "chunk-9", "included": False, "reason": "why"}
+    form = {"Content-Type": "application/x-www-form-urlencoded"}
+
+    with TestClient(
+        create_ui_app(profile=_profile(chunk_exclusion=True), adapter=adapter)
+    ) as client:
+        cross_origin = client.post(
+            "/api/chunk-inclusion", headers={"Origin": "https://example.com"}, json=body
+        )
+        form_encoded = client.post(
+            "/api/chunk-inclusion", content=b"chunk_id=chunk-9", headers=form
+        )
+
+    assert cross_origin.status_code == 403
+    assert form_encoded.status_code == 415
+    assert not any(operation == "set_chunk_inclusion" for operation, _ in adapter.calls)

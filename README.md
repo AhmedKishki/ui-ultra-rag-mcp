@@ -14,6 +14,7 @@ The `mcp` in the name identifies the interface it is designed to consume; it doe
 - status, search, passage context, source listing, and ingestion views;
 - optional metadata editing, source exclusion, source-file access, filters, retrieval modes, reranking, chunk settings, and portable-bundle controls;
 - optional per-query source selection, category-partition, and project-tag filters for servers that support them;
+- an optional settings panel for servers that report their own settings with a value, an origin, and a cost, and an optional chunk-exclusion control beside the existing whole-source one;
 - an optional memory view for servers that expose memory scopes, with opt-in writes;
 - an optional SQL console for servers that keep their records in a store a reader may need to read or repair;
 - capability flags so an adapter can hide unsupported actions;
@@ -86,6 +87,8 @@ A server whose project keeps memory — a standing document plus dated rounds, o
 | `clients` | An **Attached clients** panel on the status view, listing every MCP client connected to the host with a **Disconnect** action | `list_clients`, `disconnect_client` |
 | `generations` | A **Generations** panel on the status view listing every retained build with its size and which one is in use, with a **Remove** action and a dialog that requires the id typed back | `remove_generation` |
 | `sql_console` | A **SQL console** panel on the status view: a scope selector, a statement field, **Run query** and **Execute write**, a results grid, and a line naming the records a write changed | `sql_query`, `sql_execute` |
+| `settings` | A **Settings** panel on the status view, listing every setting by section with its value, its origin, and what changing it costs | `settings_read`, `settings_write` |
+| `chunk_exclusion` | An **Exclude this chunk** action on every search hit and every passage of a context dialog, and a **Chunk exclusions** list on the status view with a restore for each row | `list_chunk_exclusions`, `set_chunk_inclusion` |
 
 `clients` is about the host rather than the corpus. A host that serves this workspace and is not a server — a stdio-only process, or a library embedded in one — has no other client to report, so the flag defaults to off and the panel and both routes stay absent. A host that turns it on must implement `list_clients()` and `disconnect_client()` on its adapter; a host that advertises the flag without them is refused with a 501 rather than raising inside the route. `disconnect_client` ends one session, and the client owns its process, so the UI says so next to the action. The write is same-origin JSON, like every other write here.
 
@@ -154,6 +157,29 @@ The scope selector is free: the scopes arrive in the status response's `sql_scop
 The adapter owns the decision. It decides which scope a statement may reach, which statements it will run at all, and whether the rows are safe to send to a browser; a refusal is raised as `UIRequestError` and keeps its own status code and reason, so a read-only store says so instead of failing generically. The statement is forwarded exactly as typed, so its whitespace and its semicolon are part of what the adapter runs, while a scope is trimmed because an identifier with stray whitespace is not one the adapter recognises. A scope or statement that is missing or empty is a 400 before the adapter is called, and so is a statement longer than 20000 characters: a paste of a script stops here rather than travelling to the store. Both routes are same-origin JSON, loopback-only, like every other write here.
 
 **Execute write** changes stored records, and the panel says so beside its own control rather than in a dialog: the server reindexes the change, the affected-row count is reported afterwards, and this workspace cannot undo it.
+
+### Settings panel
+
+A server that has settings a reader may want to see can add a **Settings** panel to the status view. The `settings` flag is opt-in and defaults to `False`: which settings exist, what a value is, where it came from, and what changing it costs are the server's facts, and this library knows none of them. A host that turns the flag on implements two operations on `UIAdapter`:
+
+| Adapter operation | Returns |
+|---|---|
+| `settings_read()` | `{"revision": "…", "sections": [{"key": "retrieval", "title": "Retrieval", "settings": [{"key": "retrieval.rrf_k", "label": "…", "value": 60, "kind": "int", "layer": "…", "origin": "project", "writable": true, "cost": {"level": "regeneration", "message": "…"}}]}], "message": "…"}` |
+| `settings_write(values, expected_revision, confirm)` | `{"revision": "…", "changed": ["retrieval.rrf_k"], "requires_ingest": true, "message": "…"}`, or a 400 whose `error` names an unknown setting, a bad value, or a wrong revision |
+
+`settings_read` is reached at `GET /api/settings` and `settings_write` at `POST /api/settings`; both answer 404 while the flag is off, and the write is same-origin JSON like every other write here. The request body and the response are forwarded verbatim, so a key the workspace does not know reaches the server and a refusal reaches the browser unchanged.
+
+The panel draws a field from each setting's `kind`: a boolean is a checkbox, `int` and `float` are number inputs, and anything else is a single-line text input. There is no range and no list of choices, because the contract supplies neither: the value is parsed only as the kind it declares, and the server decides what it will accept. A setting the server reports with `writable: false` — a value that came from the environment or the command line, for instance — is shown disabled with its origin named.
+
+A save sends only the keys whose value differs from what the page loaded, and only a key the page loaded. When any changed key carries a `cost.level` of `regeneration` or `model`, the panel asks first: it names those keys, quotes each one's `cost.message` as the server worded it, and requires the reader to type `ingest`, or `model` when a model change is among them. After a successful write the panel reads the settings again from the returned `revision`, shows the `message`, and — when the reply sets `requires_ingest` — says that an ingestion is needed and names `ingest`. It does not start one: a rebuild is the reader's decision, and the generation in use stays searchable meanwhile.
+
+### Chunk exclusion
+
+A server that can drop one passage from retrieval without removing its source can add an **Exclude this chunk** action to every search hit and to every passage of the context dialog, and a **Chunk exclusions** list beside the status. The `chunk_exclusion` flag is opt-in and defaults to `False`: the whole-source exclusion already exists, and a chunk-level control beside it is only meaningful where the server can honour it.
+
+`list_chunk_exclusions` is reached at `GET /api/chunk-exclusions` and answers with `{"exclusions": [{"chunk_id", "source_relative_path", "locator", "reason", "excluded_at", "in_current_generation"}], "message": "…"}`. `set_chunk_inclusion` is reached at `POST /api/chunk-inclusion` and takes `{"chunk_id": "…", "included": false, "reason": "…"}` to exclude and `{"chunk_id": "…", "included": true}` with no reason to restore; both bodies are forwarded verbatim, both answer 404 while the flag is off, and the write is same-origin JSON.
+
+The dialog shows the chunk's `source_relative_path` and locator, requires a reason, and stays open showing the server's own `error` after a refusal. A chunk the server marks as absent from the current generation is labelled with the wording the row supplies, or with a fixed sentence saying so, because restoring it changes the next generation rather than the passages already on screen. The whole-source exclusion and its dialog are unchanged by this flag.
 
 Bundle controls are disabled by default. A consuming server enables `bundle_export` and/or `bundle_import` in `UICapabilities` only when its adapter implements those operations. The shared UI never reads an archive itself. Servers that distinguish an ordinary re-ingestion from a forced rebuild can also enable `force_recompute`; the UI then sends that flag only for its **Regenerate** action.
 

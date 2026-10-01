@@ -646,6 +646,113 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.settings-form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.settings-sections {
+  display: grid;
+  gap: 1rem;
+}
+
+.settings-section {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.settings-section > h4 {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.setting-field {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+}
+
+.setting-field .field-label {
+  font-size: 0.8125rem;
+}
+
+.setting-input {
+  max-width: 22rem;
+}
+
+.setting-input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+}
+
+.setting-detail {
+  display: grid;
+  justify-items: end;
+  gap: 0.25rem;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  text-align: right;
+}
+
+.setting-origin {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.setting-key {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.6875rem;
+  font-weight: 400;
+}
+
+.setting-readonly {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.setting-cost-model {
+  color: var(--warning);
+}
+
+.notice-inline {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #dfca87;
+  background: var(--warning-light);
+  color: var(--warning);
+  font-size: 0.8125rem;
+}
+
+.settings-confirm-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+  font-size: 0.8125rem;
+}
+
+.settings-confirm-list strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.dialog-error {
+  margin: 0 0 1rem;
+  color: var(--danger);
+  font-size: 0.8125rem;
+}
+
 .result-footer {
   display: flex;
   align-items: center;
@@ -1180,8 +1287,14 @@ h3 {
   .two-column-fields,
   .metadata-fields,
   .source-card,
-  .excluded-item {
+  .excluded-item,
+  .setting-row {
     grid-template-columns: 1fr;
+  }
+
+  .setting-detail {
+    justify-items: start;
+    text-align: left;
   }
 
   .metadata-fields .field-span {

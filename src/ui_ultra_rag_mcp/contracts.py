@@ -51,6 +51,16 @@ class UICapabilities:
     # Off by default: a library cannot know which store an adapter keeps, and a
     # panel that could change records must not appear beside one that only reads.
     sql_console: bool = False
+    # Whether this adapter can report its own settings and accept a change to
+    # one. Off by default: the settings, their values, their origins, and the
+    # cost of changing them are the server's facts, and a panel of invented
+    # fields would ask a reader to edit something the server does not have.
+    settings: bool = False
+    # Whether this adapter can list the chunks it has excluded from retrieval
+    # and exclude or restore one. Off by default, because a whole-source
+    # exclusion already exists and a chunk-level control beside it is only
+    # meaningful where the server can honour it.
+    chunk_exclusion: bool = False
 
     def as_dict(self) -> dict[str, bool]:
         return asdict(self)

@@ -301,6 +301,39 @@
           <div id="sql-results" class="sql-results" aria-live="polite"></div>
         </div>
 
+        <div id="settings-panel" class="partition-summary" data-capability="settings" hidden>
+          <h3>Settings</h3>
+          <p class="form-note">
+            The values this server uses, where each came from, and what changing it
+            costs. A value the server set outside this project is shown as it is
+            and cannot be edited here.
+          </p>
+          <p id="settings-message" class="form-note" hidden></p>
+          <p id="settings-notice" class="notice-inline" hidden></p>
+          <form id="settings-form" class="settings-form">
+            <div id="settings-sections" class="settings-sections"></div>
+            <div class="sql-actions">
+              <button id="settings-submit" class="button button-primary" type="submit" disabled>Save changes</button>
+              <button id="settings-reload" class="button button-quiet" type="button">Reload settings</button>
+              <small class="sql-write-note">The server decides which values it will accept, and refuses anything else.</small>
+            </div>
+          </form>
+        </div>
+
+        <div id="chunk-exclusion-summary" class="partition-summary" data-capability="chunk_exclusion" hidden>
+          <div class="section-heading-row">
+            <h3>Chunk exclusions</h3>
+            <span id="chunk-exclusion-count" class="count-badge">0</span>
+          </div>
+          <p class="form-note">
+            Chunks this server has removed from retrieval without removing their
+            source. The original files are not deleted or edited, and restoring one
+            returns it to the next generation.
+          </p>
+          <p id="chunk-exclusion-message" class="form-note" hidden></p>
+          <div id="chunk-exclusion-list" class="excluded-list" aria-live="polite"></div>
+        </div>
+
         <div id="status-notice" class="notice" hidden>
           <div>
             <strong id="status-notice-title">Attention needed</strong>
@@ -405,6 +438,52 @@
         <div class="dialog-actions">
           <button class="button button-quiet dialog-close" type="button">Cancel</button>
           <button id="exclusion-submit" class="button button-danger" type="submit">Exclude source</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="chunk-dialog" class="dialog">
+      <form id="chunk-form" method="dialog">
+        <div class="dialog-header">
+          <h2>Exclude this chunk?</h2>
+          <button class="icon-button dialog-close" type="button" aria-label="Close">×</button>
+        </div>
+        <input id="chunk-id" type="hidden">
+        <p id="chunk-name" class="dialog-source-name"></p>
+        <label for="chunk-reason">
+          <span class="field-label">Reason</span>
+          <textarea id="chunk-reason" rows="4" required placeholder="For example: this passage repeats the one beside it"></textarea>
+        </label>
+        <p class="form-note">
+          Retrieval changes for the next generation. The source file is not deleted or edited.
+        </p>
+        <p id="chunk-error" class="dialog-error" hidden></p>
+        <div class="dialog-actions">
+          <button class="button button-quiet dialog-close" type="button">Cancel</button>
+          <button id="chunk-submit" class="button button-danger" type="submit">Exclude chunk</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="settings-confirm-dialog" class="dialog">
+      <form id="settings-confirm-form" method="dialog">
+        <div class="dialog-header">
+          <h2>Apply these settings?</h2>
+          <button class="icon-button dialog-close" type="button" aria-label="Close">×</button>
+        </div>
+        <p class="dialog-intro">
+          Some of these values change what the current generation holds. The server
+          keeps the generation in use until you rebuild it.
+        </p>
+        <ul id="settings-confirm-list" class="settings-confirm-list"></ul>
+        <label for="settings-confirm-word">
+          <span id="settings-confirm-label" class="field-label">Type to confirm</span>
+          <input id="settings-confirm-word" type="text" autocomplete="off" placeholder="ingest">
+        </label>
+        <p id="settings-confirm-error" class="dialog-error" hidden></p>
+        <div class="dialog-actions">
+          <button class="button button-quiet dialog-close" type="button">Cancel</button>
+          <button id="settings-confirm-submit" class="button button-primary" type="submit" disabled>Apply changes</button>
         </div>
       </form>
     </dialog>

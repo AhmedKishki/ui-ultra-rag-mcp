@@ -49,6 +49,10 @@ _OPERATION_CAPABILITY = {
     "memory_standing": "memory",
     "memory_append": "memory_writes",
     "memory_standing_save": "memory_writes",
+    "settings_read": "settings",
+    "settings_write": "settings",
+    "list_chunk_exclusions": "chunk_exclusion",
+    "set_chunk_inclusion": "chunk_exclusion",
 }
 
 
@@ -588,6 +592,42 @@ async def _memory_standing_save(request: Request) -> Response:
     return JSONResponse(await _adapter_call(request, "memory_standing_save", arguments))
 
 
+async def _settings_read(request: Request) -> Response:
+    """The settings the server has, forwarded as the server reported them.
+
+    Nothing here is named, defaulted, or dropped: which settings exist, what a
+    value is, where it came from, and what changing it costs are the server's
+    facts, and this repository states none of them.
+    """
+
+    return JSONResponse(await _adapter_call(request, "settings_read"))
+
+
+async def _settings_write(request: Request) -> Response:
+    """A settings change, forwarded verbatim so the server can refuse it.
+
+    The body reaches the adapter exactly as the page sent it, because the keys
+    are the server's setting names and the revision is its own comparison
+    token; the refusal that follows is shown unchanged and never retried.
+    """
+
+    body = await _json_body(request)
+    return JSONResponse(await _adapter_call(request, "settings_write", body))
+
+
+async def _chunk_exclusions(request: Request) -> Response:
+    """The chunks this server has excluded from retrieval."""
+
+    return JSONResponse(await _adapter_call(request, "list_chunk_exclusions"))
+
+
+async def _set_chunk_inclusion(request: Request) -> Response:
+    """Exclude or restore one chunk, forwarded verbatim to the server's decision."""
+
+    body = await _json_body(request)
+    return JSONResponse(await _adapter_call(request, "set_chunk_inclusion", body))
+
+
 async def _security_headers(request: Request, call_next: Any) -> Response:
     response = await call_next(request)
     response.headers["Content-Security-Policy"] = (
@@ -671,6 +711,10 @@ def create_ui_app(
         Route("/api/memory/standing", _memory_standing),
         Route("/api/memory/append", _memory_append, methods=["POST"]),
         Route("/api/memory/standing", _memory_standing_save, methods=["POST"]),
+        Route("/api/settings", _settings_read),
+        Route("/api/settings", _settings_write, methods=["POST"]),
+        Route("/api/chunk-exclusions", _chunk_exclusions),
+        Route("/api/chunk-inclusion", _set_chunk_inclusion, methods=["POST"]),
     ]
     app = Starlette(
         routes=routes,
